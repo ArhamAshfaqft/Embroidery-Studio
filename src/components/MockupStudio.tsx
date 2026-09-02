@@ -22,6 +22,10 @@ import {
   EyeOff
 } from 'lucide-react';
 
+const MOCKUP_LAYOUT_SIZE = 1200;
+const PREVIEW_SUPERSAMPLE = 2;
+const HIGH_QUALITY_SETTLE_MS = 140;
+
 interface MockupStudioProps {
   sourceAsset: SourceAsset;
   settings: EmbroiderySettings;
@@ -64,6 +68,9 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   const mockupImgRef = useRef<HTMLImageElement | null>(null);
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const embroideryCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const settledRenderTimerRef = useRef<number | null>(null);
+  const transformRef = useRef<MockupTransform>(transform);
+  transformRef.current = transform;
 
   const embroideryRenderer = useRef(new EmbroideryRenderer());
   const mockupRenderer = useRef(new MockupRenderer());
@@ -137,7 +144,11 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     img.crossOrigin = 'anonymous';
     img.onload = async () => {
       sourceImgRef.current = img;
-      const embResult = await embroideryRenderer.current.renderEmbroideryAsync(img, settings, 1);
+      const embResult = await embroideryRenderer.current.renderEmbroideryAsync(
+        img,
+        settings,
+        PREVIEW_SUPERSAMPLE
+      );
       if (cancelled) return;
       embroideryCanvasRef.current = embResult.canvas;
       renderCompositeMockup();
@@ -158,37 +169,63 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     img.src = mockupTemplate.imageUrl;
   }, [mockupTemplate.imageUrl]);
 
-  const renderCompositeMockup = useCallback(() => {
+  const renderCompositeMockup = useCallback((renderScale: number = PREVIEW_SUPERSAMPLE) => {
     if (!mockupImgRef.current || !embroideryCanvasRef.current || !mockupCanvasRef.current) return;
+
+    const renderWidth = Math.round(MOCKUP_LAYOUT_SIZE * renderScale);
+    const renderHeight = Math.round(MOCKUP_LAYOUT_SIZE * renderScale);
 
     const composed = mockupRenderer.current.composeMockup(
       mockupImgRef.current,
       embroideryCanvasRef.current,
-      transform,
-      1200,
-      1200
+      transformRef.current,
+      renderWidth,
+      renderHeight,
+      {
+        embroideryRenderScale: PREVIEW_SUPERSAMPLE,
+        layoutWidth: MOCKUP_LAYOUT_SIZE,
+        layoutHeight: MOCKUP_LAYOUT_SIZE
+      }
     );
 
     const canvas = mockupCanvasRef.current;
-    canvas.width = 1200;
-    canvas.height = 1200;
+    canvas.width = renderWidth;
+    canvas.height = renderHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, 1200, 1200);
-    ctx.drawImage(composed, 0, 0);
-  }, [transform]);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, renderWidth, renderHeight);
+    ctx.drawImage(composed, 0, 0, renderWidth, renderHeight);
+  }, []);
 
   useEffect(() => {
-    renderCompositeMockup();
+    // Keep placement controls responsive with a 1x working frame, then replace
+    // it with a full 2x supersampled composite as soon as interaction settles.
+    renderCompositeMockup(1);
+    if (settledRenderTimerRef.current !== null) {
+      window.clearTimeout(settledRenderTimerRef.current);
+    }
+    settledRenderTimerRef.current = window.setTimeout(() => {
+      renderCompositeMockup(PREVIEW_SUPERSAMPLE);
+      settledRenderTimerRef.current = null;
+    }, HIGH_QUALITY_SETTLE_MS);
+
+    return () => {
+      if (settledRenderTimerRef.current !== null) {
+        window.clearTimeout(settledRenderTimerRef.current);
+        settledRenderTimerRef.current = null;
+      }
+    };
   }, [transform, renderCompositeMockup]);
 
-  const posX = (transform.x / 100) * 1200;
-  const posY = (transform.y / 100) * 1200;
+  const posX = (transform.x / 100) * MOCKUP_LAYOUT_SIZE;
+  const posY = (transform.y / 100) * MOCKUP_LAYOUT_SIZE;
   const embBaseW = embroideryCanvasRef.current ? embroideryCanvasRef.current.width : 500;
   const embBaseH = embroideryCanvasRef.current ? embroideryCanvasRef.current.height : 500;
-  const boxW = embBaseW * transform.scale;
-  const boxH = embBaseH * transform.scale;
+  const boxW = (embBaseW / PREVIEW_SUPERSAMPLE) * transform.scale;
+  const boxH = (embBaseH / PREVIEW_SUPERSAMPLE) * transform.scale;
 
   // Wheel Zoom
   const handleWheel = (e: React.WheelEvent) => {
@@ -331,10 +368,10 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
             >
               <canvas
                 ref={mockupCanvasRef}
-                width={1200}
-                height={1200}
+                width={MOCKUP_LAYOUT_SIZE * PREVIEW_SUPERSAMPLE}
+                height={MOCKUP_LAYOUT_SIZE * PREVIEW_SUPERSAMPLE}
                 className="rounded-2xl shadow-2xl border border-white/[0.08]"
-                style={{ width: '1200px', height: '1200px' }}
+                style={{ width: `${MOCKUP_LAYOUT_SIZE}px`, height: `${MOCKUP_LAYOUT_SIZE}px` }}
               />
 
               {/* Interactive Bounding Box Gizmo (Hidden in Preview Mode) */}

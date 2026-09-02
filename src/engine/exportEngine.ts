@@ -73,7 +73,12 @@ export class ExportEngine {
       embResult.canvas,
       transform,
       targetWidth,
-      targetHeight
+      targetHeight,
+      {
+        embroideryRenderScale: scale,
+        layoutWidth: mockupImg.naturalWidth || 1200,
+        layoutHeight: mockupImg.naturalHeight || 1200
+      }
     );
 
     return new Promise((resolve, reject) => {

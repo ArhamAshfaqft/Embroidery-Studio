@@ -65,6 +65,14 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
   }
 ];
 
+export interface MockupCompositionOptions {
+  /** Scale used when the embroidery engine produced embroideryCanvas. */
+  embroideryRenderScale?: number;
+  /** Logical mockup dimensions before preview/export supersampling. */
+  layoutWidth?: number;
+  layoutHeight?: number;
+}
+
 export class MockupRenderer {
   /**
    * Compose the embroidery graphic onto the apparel mockup canvas
@@ -75,13 +83,17 @@ export class MockupRenderer {
     embroideryCanvas: HTMLCanvasElement,
     transform: MockupTransform,
     targetWidth: number = 1200,
-    targetHeight: number = 1200
+    targetHeight: number = 1200,
+    options: MockupCompositionOptions = {}
   ): HTMLCanvasElement {
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = targetWidth;
     outputCanvas.height = targetHeight;
     const ctx = outputCanvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return outputCanvas;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // 1. Draw base apparel photo
     ctx.drawImage(mockupImg, 0, 0, targetWidth, targetHeight);
@@ -92,8 +104,15 @@ export class MockupRenderer {
     const scale = transform.scale;
     const rotRad = (transform.rotation * Math.PI) / 180;
 
-    const embW = Math.round(embroideryCanvas.width * scale);
-    const embH = Math.round(embroideryCanvas.height * scale);
+    const layoutWidth = Math.max(1, options.layoutWidth ?? targetWidth);
+    const layoutHeight = Math.max(1, options.layoutHeight ?? targetHeight);
+    const outputScale = Math.min(targetWidth / layoutWidth, targetHeight / layoutHeight);
+    const embroideryRenderScale = Math.max(0.01, options.embroideryRenderScale ?? 1);
+
+    // Normalize the source render scale before applying the mockup output scale.
+    // This preserves the same physical placement at 1x, 2x previews, and exports.
+    const embW = Math.round((embroideryCanvas.width / embroideryRenderScale) * scale * outputScale);
+    const embH = Math.round((embroideryCanvas.height / embroideryRenderScale) * scale * outputScale);
 
     if (embW <= 0 || embH <= 0) return outputCanvas;
 
@@ -108,8 +127,8 @@ export class MockupRenderer {
         posY,
         embW,
         embH,
-        rotRad,
-        transform.displacementStrength
+        transform.displacementStrength,
+        outputScale
       );
     }
 
@@ -121,9 +140,9 @@ export class MockupRenderer {
     if (transform.shadowIntensity > 0) {
       ctx.save();
       ctx.shadowColor = `rgba(0, 0, 0, ${0.15 + (transform.shadowIntensity / 10) * 0.45})`;
-      ctx.shadowBlur = 8 * scale + transform.shadowIntensity * 1.6;
+      ctx.shadowBlur = (8 * scale + transform.shadowIntensity * 1.6) * outputScale;
       ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 4 * scale + transform.shadowIntensity * 1.2;
+      ctx.shadowOffsetY = (4 * scale + transform.shadowIntensity * 1.2) * outputScale;
       ctx.globalAlpha = transform.opacity;
 
       // Draw shadow silhouette
@@ -151,8 +170,8 @@ export class MockupRenderer {
     posY: number,
     embW: number,
     embH: number,
-    rotRad: number,
-    strength: number
+    strength: number,
+    outputScale: number
   ): HTMLCanvasElement {
     const displacedCanvas = document.createElement('canvas');
     displacedCanvas.width = embW;
@@ -160,7 +179,10 @@ export class MockupRenderer {
     const dispCtx = displacedCanvas.getContext('2d', { willReadFrequently: true });
     if (!dispCtx) return embroideryCanvas;
 
-    // Resample embroidery to work dimensions
+    // Resample embroidery to the final placed pixel density. High-quality
+    // interpolation keeps individual thread ridges intact in supersampled views.
+    dispCtx.imageSmoothingEnabled = true;
+    dispCtx.imageSmoothingQuality = 'high';
     dispCtx.drawImage(embroideryCanvas, 0, 0, embW, embH);
     const embData = dispCtx.getImageData(0, 0, embW, embH);
     const embPixels = embData.data;
@@ -180,39 +202,75 @@ export class MockupRenderer {
     const outData = dispCtx.createImageData(embW, embH);
     const outPixels = outData.data;
 
-    const dispFactor = (strength / 10) * 4.5;
+    const dispFactor = (strength / 10) * 4.5 * outputScale;
 
-    // Displacement mapping loop
-    for (let y = 1; y < embH - 1; y++) {
-      for (let x = 1; x < embW - 1; x++) {
+    // Displacement mapping loop. Bilinear, premultiplied-alpha sampling avoids
+    // the blockiness and dark edge halos caused by rounded nearest-pixel reads.
+    for (let y = 0; y < embH; y++) {
+      const yUp = Math.max(0, y - 1);
+      const yDown = Math.min(embH - 1, y + 1);
+
+      for (let x = 0; x < embW; x++) {
         const idx = (y * embW + x) * 4;
         const alpha = embPixels[idx + 3];
         if (alpha === 0) continue;
 
         // Sample garment local luminance
         const gIdx = (y * embW + x) * 4;
-        const lumL = 0.299 * gPixels[gIdx - 4] + 0.587 * gPixels[gIdx - 3] + 0.114 * gPixels[gIdx - 2];
-        const lumR = 0.299 * gPixels[gIdx + 4] + 0.587 * gPixels[gIdx + 5] + 0.114 * gPixels[gIdx + 6];
-        const lumU = 0.299 * gPixels[gIdx - embW * 4] + 0.587 * gPixels[gIdx - embW * 4 + 1] + 0.114 * gPixels[gIdx - embW * 4 + 2];
-        const lumD = 0.299 * gPixels[gIdx + embW * 4] + 0.587 * gPixels[gIdx + embW * 4 + 1] + 0.114 * gPixels[gIdx + embW * 4 + 2];
+        const xLeft = Math.max(0, x - 1);
+        const xRight = Math.min(embW - 1, x + 1);
+        const gLeft = (y * embW + xLeft) * 4;
+        const gRight = (y * embW + xRight) * 4;
+        const gUp = (yUp * embW + x) * 4;
+        const gDown = (yDown * embW + x) * 4;
+        const lumL = 0.299 * gPixels[gLeft] + 0.587 * gPixels[gLeft + 1] + 0.114 * gPixels[gLeft + 2];
+        const lumR = 0.299 * gPixels[gRight] + 0.587 * gPixels[gRight + 1] + 0.114 * gPixels[gRight + 2];
+        const lumU = 0.299 * gPixels[gUp] + 0.587 * gPixels[gUp + 1] + 0.114 * gPixels[gUp + 2];
+        const lumD = 0.299 * gPixels[gDown] + 0.587 * gPixels[gDown + 1] + 0.114 * gPixels[gDown + 2];
 
         // Gradient vector of garment folds
         const gradX = (lumR - lumL) / 255;
         const gradY = (lumD - lumU) / 255;
 
         // Displace sampling position
-        const srcX = Math.max(0, Math.min(embW - 1, Math.round(x + gradX * dispFactor)));
-        const srcY = Math.max(0, Math.min(embH - 1, Math.round(y + gradY * dispFactor)));
-        const srcIdx = (srcY * embW + srcX) * 4;
+        const srcX = Math.max(0, Math.min(embW - 1, x + gradX * dispFactor));
+        const srcY = Math.max(0, Math.min(embH - 1, y + gradY * dispFactor));
+        const x0 = Math.floor(srcX);
+        const y0 = Math.floor(srcY);
+        const x1 = Math.min(embW - 1, x0 + 1);
+        const y1 = Math.min(embH - 1, y0 + 1);
+        const tx = srcX - x0;
+        const ty = srcY - y0;
+        const w00 = (1 - tx) * (1 - ty);
+        const w10 = tx * (1 - ty);
+        const w01 = (1 - tx) * ty;
+        const w11 = tx * ty;
+        const i00 = (y0 * embW + x0) * 4;
+        const i10 = (y0 * embW + x1) * 4;
+        const i01 = (y1 * embW + x0) * 4;
+        const i11 = (y1 * embW + x1) * 4;
+        const a00 = embPixels[i00 + 3] / 255;
+        const a10 = embPixels[i10 + 3] / 255;
+        const a01 = embPixels[i01 + 3] / 255;
+        const a11 = embPixels[i11 + 3] / 255;
+        const sampledAlpha = w00 * a00 + w10 * a10 + w01 * a01 + w11 * a11;
+
+        if (sampledAlpha <= 0) continue;
 
         // Fabric fold shadow modulation
         const centerLum = 0.299 * gPixels[gIdx] + 0.587 * gPixels[gIdx + 1] + 0.114 * gPixels[gIdx + 2];
         const foldShadow = 0.88 + (centerLum / 255) * 0.24;
 
-        outPixels[idx] = Math.min(255, Math.max(0, Math.round(embPixels[srcIdx] * foldShadow)));
-        outPixels[idx + 1] = Math.min(255, Math.max(0, Math.round(embPixels[srcIdx + 1] * foldShadow)));
-        outPixels[idx + 2] = Math.min(255, Math.max(0, Math.round(embPixels[srcIdx + 2] * foldShadow)));
-        outPixels[idx + 3] = embPixels[srcIdx + 3];
+        for (let channel = 0; channel < 3; channel++) {
+          const premultiplied =
+            w00 * embPixels[i00 + channel] * a00 +
+            w10 * embPixels[i10 + channel] * a10 +
+            w01 * embPixels[i01 + channel] * a01 +
+            w11 * embPixels[i11 + channel] * a11;
+          const color = (premultiplied / sampledAlpha) * foldShadow;
+          outPixels[idx + channel] = Math.min(255, Math.max(0, Math.round(color)));
+        }
+        outPixels[idx + 3] = Math.round(sampledAlpha * 255);
       }
     }
 
