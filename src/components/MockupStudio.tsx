@@ -1,0 +1,510 @@
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import {
+  MockupTemplate,
+  MockupTransform,
+  EmbroiderySettings,
+  SourceAsset,
+  ToolType
+} from '../types';
+import { EmbroideryRenderer } from '../engine/embroideryRenderer';
+import { MockupRenderer } from '../engine/mockupRenderer';
+import { MockupControls } from './Inspector/MockupControls';
+import { Ruler } from './Controls/Ruler';
+import {
+  Shirt,
+  Download,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Maximize2,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+
+interface MockupStudioProps {
+  sourceAsset: SourceAsset;
+  settings: EmbroiderySettings;
+  mockupTemplate: MockupTemplate;
+  transform: MockupTransform;
+  onSelectMockup: (mockup: MockupTemplate) => void;
+  onUpdateTransform: (updated: Partial<MockupTransform>) => void;
+  onUploadCustomMockup: (template: MockupTemplate) => void;
+  activeTool: ToolType;
+  zoom: number;
+  onZoomChange: (z: number) => void;
+  onResetZoom: () => void;
+  onFitToScreen: () => void;
+  showRulers: boolean;
+  isPreviewMode: boolean;
+  onTogglePreviewMode: () => void;
+  onOpenExport: () => void;
+}
+
+export const MockupStudio: React.FC<MockupStudioProps> = ({
+  sourceAsset,
+  settings,
+  mockupTemplate,
+  transform,
+  onSelectMockup,
+  onUpdateTransform,
+  onUploadCustomMockup,
+  activeTool,
+  zoom,
+  onZoomChange,
+  onResetZoom,
+  onFitToScreen,
+  showRulers,
+  isPreviewMode,
+  onTogglePreviewMode,
+  onOpenExport
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mockupCanvasRef = useRef<HTMLCanvasElement>(null);
+  const mockupImgRef = useRef<HTMLImageElement | null>(null);
+  const sourceImgRef = useRef<HTMLImageElement | null>(null);
+  const embroideryCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const embroideryRenderer = useRef(new EmbroideryRenderer());
+  const mockupRenderer = useRef(new MockupRenderer());
+
+  // Pan & Hold Space State
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [isSpaceHeld, setIsSpaceHeld] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  type InteractionMode = 'none' | 'drag' | 'resize' | 'rotate';
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('none');
+  const [activeHandle, setActiveHandle] = useState<string | null>(null);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+  const [initialTransform, setInitialTransform] = useState<MockupTransform>(transform);
+
+  const [cursorCoord, setCursorCoord] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
+
+  // Space Bar Hold Listener for Hand Pan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        document.activeElement?.tagName === 'SELECT'
+      ) {
+        return;
+      }
+      if (e.code === 'Space' && !e.repeat) {
+        setIsSpaceHeld(true);
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpaceHeld(false);
+        setIsPanning(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (containerRef.current) {
+        setContainerSize({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  useEffect(() => {
+    if (!sourceAsset.dataUrl) return;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      sourceImgRef.current = img;
+      const embResult = embroideryRenderer.current.renderEmbroidery(img, settings, 1);
+      embroideryCanvasRef.current = embResult.canvas;
+      renderCompositeMockup();
+    };
+    img.src = sourceAsset.dataUrl;
+  }, [sourceAsset.dataUrl, settings]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      mockupImgRef.current = img;
+      renderCompositeMockup();
+    };
+    img.src = mockupTemplate.imageUrl;
+  }, [mockupTemplate.imageUrl]);
+
+  const renderCompositeMockup = useCallback(() => {
+    if (!mockupImgRef.current || !embroideryCanvasRef.current || !mockupCanvasRef.current) return;
+
+    const composed = mockupRenderer.current.composeMockup(
+      mockupImgRef.current,
+      embroideryCanvasRef.current,
+      transform,
+      1200,
+      1200
+    );
+
+    const canvas = mockupCanvasRef.current;
+    canvas.width = 1200;
+    canvas.height = 1200;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, 1200, 1200);
+    ctx.drawImage(composed, 0, 0);
+  }, [transform]);
+
+  useEffect(() => {
+    renderCompositeMockup();
+  }, [transform, renderCompositeMockup]);
+
+  const posX = (transform.x / 100) * 1200;
+  const posY = (transform.y / 100) * 1200;
+  const embBaseW = embroideryCanvasRef.current ? embroideryCanvasRef.current.width : 500;
+  const embBaseH = embroideryCanvasRef.current ? embroideryCanvasRef.current.height : 500;
+  const boxW = embBaseW * transform.scale;
+  const boxH = embBaseH * transform.scale;
+
+  // Wheel Zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+    const newZoom = Math.max(0.1, Math.min(4.0, zoom * zoomFactor));
+    onZoomChange(parseFloat(newZoom.toFixed(3)));
+  };
+
+  const handleContainerMouseDown = (e: React.MouseEvent) => {
+    if (isSpaceHeld || e.button === 1) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  };
+
+  const startDrag = (e: React.MouseEvent, mode: InteractionMode, handle?: string) => {
+    if (isSpaceHeld || isPreviewMode) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setInteractionMode(mode);
+    setActiveHandle(handle || null);
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+    setInitialTransform({ ...transform });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setCursorCoord({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      }
+
+      if (isPanning) {
+        setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+        return;
+      }
+
+      if (interactionMode === 'none' || !containerRef.current) return;
+
+      const canvasRect = mockupCanvasRef.current?.getBoundingClientRect();
+      if (!canvasRect) return;
+
+      if (interactionMode === 'drag') {
+        const dx = e.clientX - dragStartPos.x;
+        const dy = e.clientY - dragStartPos.y;
+        const deltaXPercent = (dx / canvasRect.width) * 100;
+        const deltaYPercent = (dy / canvasRect.height) * 100;
+        onUpdateTransform({
+          x: Math.max(5, Math.min(95, parseFloat((initialTransform.x + deltaXPercent).toFixed(1)))),
+          y: Math.max(5, Math.min(95, parseFloat((initialTransform.y + deltaYPercent).toFixed(1))))
+        });
+      } else if (interactionMode === 'resize') {
+        const centerX = canvasRect.left + (initialTransform.x / 100) * canvasRect.width;
+        const centerY = canvasRect.top + (initialTransform.y / 100) * canvasRect.height;
+        const initialDist = Math.hypot(dragStartPos.x - centerX, dragStartPos.y - centerY);
+        const currentDist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+        if (initialDist > 10) {
+          const scaleRatio = currentDist / initialDist;
+          const newScale = Math.max(0.1, Math.min(2.5, initialTransform.scale * scaleRatio));
+          onUpdateTransform({ scale: parseFloat(newScale.toFixed(2)) });
+        }
+      } else if (interactionMode === 'rotate') {
+        const centerX = canvasRect.left + (transform.x / 100) * canvasRect.width;
+        const centerY = canvasRect.top + (transform.y / 100) * canvasRect.height;
+        const startAngle = Math.atan2(dragStartPos.y - centerY, dragStartPos.x - centerX);
+        const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        const deltaAngleDeg = ((currentAngle - startAngle) * 180) / Math.PI;
+        let newRot = Math.round(initialTransform.rotation + deltaAngleDeg);
+        while (newRot > 180) newRot -= 360;
+        while (newRot < -180) newRot += 360;
+        onUpdateTransform({ rotation: newRot });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsPanning(false);
+      setInteractionMode('none');
+      setActiveHandle(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isPanning, panStart, interactionMode, dragStartPos, initialTransform, zoom, transform, onUpdateTransform]);
+
+  const containerCursor =
+    isSpaceHeld
+      ? isPanning
+        ? 'cursor-grabbing'
+        : 'cursor-grab'
+      : 'cursor-default';
+
+  return (
+    <div className="flex-1 flex overflow-hidden bg-[#09090b]">
+      {/* Central Mockup Viewport */}
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Top Pixel Ruler */}
+        {showRulers && !isPreviewMode && (
+          <div className="pl-4">
+            <Ruler
+              orientation="horizontal"
+              length={containerSize.width}
+              zoom={zoom}
+              offset={containerSize.width / 2 + pan.x}
+              cursorPos={cursorCoord.x}
+            />
+          </div>
+        )}
+
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Left Pixel Ruler */}
+          {showRulers && !isPreviewMode && (
+            <Ruler
+              orientation="vertical"
+              length={containerSize.height}
+              zoom={zoom}
+              offset={containerSize.height / 2 + pan.y}
+              cursorPos={cursorCoord.y}
+            />
+          )}
+
+          <div
+            ref={containerRef}
+            onWheel={handleWheel}
+            onMouseDown={handleContainerMouseDown}
+            className={`flex-1 relative overflow-hidden flex items-center justify-center select-none bg-[#09090c] canvas-grid ${containerCursor}`}
+          >
+            {/* Canvas & Gizmo Wrapper */}
+            <div
+              className="relative transition-transform duration-75 shadow-2xl flex items-center justify-center pointer-events-none"
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom * 0.65})`,
+                transformOrigin: 'center center'
+              }}
+            >
+              <canvas
+                ref={mockupCanvasRef}
+                width={1200}
+                height={1200}
+                className="rounded-2xl shadow-2xl border border-white/[0.08]"
+                style={{ width: '1200px', height: '1200px' }}
+              />
+
+              {/* Interactive Bounding Box Gizmo (Hidden in Preview Mode) */}
+              {!isPreviewMode && (
+                <div
+                  className={`absolute border-2 border-white/90 rounded-lg shadow-2xl transition-shadow ${
+                    isSpaceHeld ? 'pointer-events-none' : 'pointer-events-auto'
+                  } ${interactionMode === 'drag' ? 'border-white shadow-[0_0_25px_rgba(255,255,255,0.4)]' : 'hover:border-white'}`}
+                  style={{
+                    left: `${posX - boxW / 2}px`,
+                    top: `${posY - boxH / 2}px`,
+                    width: `${boxW}px`,
+                    height: `${boxH}px`,
+                    transform: `rotate(${transform.rotation}deg)`,
+                    transformOrigin: 'center center',
+                    cursor: interactionMode === 'drag' ? 'grabbing' : 'grab'
+                  }}
+                  onMouseDown={(e) => startDrag(e, 'drag')}
+                >
+                  {/* Center crosshair */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-2.5 h-2.5 rounded-full bg-white shadow-lg border border-black/40" />
+                  </div>
+
+                  {/* Top Rotation Stem & Handle */}
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center">
+                    <div
+                      onMouseDown={(e) => startDrag(e, 'rotate')}
+                      className="w-7 h-7 rounded-full bg-white text-neutral-950 border-2 border-neutral-950 shadow-2xl cursor-grab flex items-center justify-center hover:scale-125 transition-transform active:cursor-grabbing pointer-events-auto"
+                      title="Drag to Rotate embroidery"
+                    >
+                      <RotateCw size={13} className="text-neutral-950" />
+                    </div>
+                    <div className="w-[1.5px] h-3.5 bg-white/80 pointer-events-none" />
+                  </div>
+
+                  {/* Corner Resize Handles */}
+                  <div
+                    onMouseDown={(e) => startDrag(e, 'resize', 'nw')}
+                    className="absolute -top-2.5 -left-2.5 w-5 h-5 bg-white border-2 border-neutral-950 rounded-md cursor-nwse-resize shadow-xl hover:scale-125 transition-transform pointer-events-auto"
+                    title="Drag to Resize"
+                  />
+                  <div
+                    onMouseDown={(e) => startDrag(e, 'resize', 'ne')}
+                    className="absolute -top-2.5 -right-2.5 w-5 h-5 bg-white border-2 border-neutral-950 rounded-md cursor-nesw-resize shadow-xl hover:scale-125 transition-transform pointer-events-auto"
+                    title="Drag to Resize"
+                  />
+                  <div
+                    onMouseDown={(e) => startDrag(e, 'resize', 'sw')}
+                    className="absolute -bottom-2.5 -left-2.5 w-5 h-5 bg-white border-2 border-neutral-950 rounded-md cursor-nesw-resize shadow-xl hover:scale-125 transition-transform pointer-events-auto"
+                    title="Drag to Resize"
+                  />
+                  <div
+                    onMouseDown={(e) => startDrag(e, 'resize', 'se')}
+                    className="absolute -bottom-2.5 -right-2.5 w-5 h-5 bg-white border-2 border-neutral-950 rounded-md cursor-nwse-resize shadow-xl hover:scale-125 transition-transform pointer-events-auto"
+                    title="Drag to Resize"
+                  />
+
+                  {/* Floating Transform Badge */}
+                  <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-[#121216]/95 border border-white/[0.1] rounded-full px-2.5 py-0.5 text-[10px] font-mono text-neutral-200 shadow-xl whitespace-nowrap pointer-events-none">
+                    {Math.round(transform.scale * 100)}% • {Math.round(transform.rotation)}°
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Floating Clean Preview Badge */}
+            {isPreviewMode && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 bg-black/80 backdrop-blur-md border border-white/20 rounded-full px-4 py-1.5 text-xs text-white shadow-2xl animate-in fade-in duration-200 pointer-events-auto">
+                <Eye size={13} className="text-emerald-400" />
+                <span className="font-semibold">Clean Preview Mode</span>
+                <span className="text-neutral-500">•</span>
+                <button
+                  onClick={onTogglePreviewMode}
+                  className="text-neutral-300 hover:text-white underline text-[11px]"
+                >
+                  Press W to Edit
+                </button>
+              </div>
+            )}
+
+            {/* Viewport Floating HUD */}
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              className="absolute top-3 right-3 z-20 flex items-center bg-[#121216]/90 backdrop-blur-md border border-white/[0.08] rounded-lg p-1 space-x-1 shadow-xl pointer-events-auto"
+            >
+              <button
+                onClick={() => onZoomChange(Math.max(0.1, parseFloat((zoom * 0.8).toFixed(2))))}
+                className="p-1 text-neutral-400 hover:text-white rounded transition-colors"
+                title="Zoom Out"
+              >
+                <ZoomOut size={12} />
+              </button>
+              <span className="px-1.5 text-[11px] font-mono text-neutral-300 min-w-10 text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                onClick={() => onZoomChange(Math.min(4.0, parseFloat((zoom * 1.25).toFixed(2))))}
+                className="p-1 text-neutral-400 hover:text-white rounded transition-colors"
+                title="Zoom In"
+              >
+                <ZoomIn size={12} />
+              </button>
+              <div className="w-[1px] h-3.5 bg-white/[0.08] mx-0.5" />
+              <button
+                onClick={onFitToScreen}
+                className="p-1 text-neutral-400 hover:text-white rounded transition-colors"
+                title="Fit to Window (Ctrl+0)"
+              >
+                <Maximize2 size={12} />
+              </button>
+              <button
+                onClick={onResetZoom}
+                className="p-1 text-neutral-400 hover:text-white rounded transition-colors"
+                title="Reset View 100% (Ctrl+1)"
+              >
+                <RotateCcw size={12} />
+              </button>
+              <div className="w-[1px] h-3.5 bg-white/[0.08] mx-0.5" />
+              <button
+                onClick={onTogglePreviewMode}
+                className={`p-1 rounded transition-colors ${
+                  isPreviewMode ? 'bg-emerald-500/20 text-emerald-300' : 'text-neutral-400 hover:text-white'
+                }`}
+                title="Toggle Clean Preview Mode (W)"
+              >
+                {isPreviewMode ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
+
+            {/* Viewport Footer */}
+            <div className="absolute bottom-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
+              <div className="flex items-center space-x-3 bg-[#121216]/90 backdrop-blur-md border border-white/[0.08] rounded-full px-4 py-1.5 text-[11px] font-mono text-neutral-400 pointer-events-auto shadow-xl">
+                <span className="text-neutral-200 font-semibold">{mockupTemplate.name}</span>
+                <span className="text-neutral-700">•</span>
+                <span>Position: ({Math.round(transform.x)}%, {Math.round(transform.y)}%)</span>
+                <span className="text-neutral-700">•</span>
+                <span>Scale: {Math.round(transform.scale * 100)}%</span>
+                <span className="text-neutral-700">•</span>
+                <span className="text-neutral-400">(Hold Space to Pan)</span>
+              </div>
+
+              <button
+                onClick={onOpenExport}
+                className="pro-btn flex items-center space-x-2 px-5 py-2.5 rounded-xl text-neutral-950 text-xs font-bold transition-all shadow-2xl pointer-events-auto"
+              >
+                <Download size={14} />
+                <span>Export Listing Image</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Inspector Panel */}
+      <div className="w-86 border-l border-white/[0.08] flex flex-col bg-[#0d0d11] shrink-0">
+        <div className="p-3.5 border-b border-white/[0.08] flex items-center justify-between bg-[#121216]/40">
+          <div className="flex items-center space-x-2">
+            <Shirt size={13} className="text-neutral-400" />
+            <span className="text-[11px] font-bold tracking-wider text-neutral-200 uppercase">
+              Apparel Inspector
+            </span>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3.5">
+          <MockupControls
+            currentMockup={mockupTemplate}
+            transform={transform}
+            onSelectMockup={onSelectMockup}
+            onUpdateTransform={onUpdateTransform}
+            onUploadCustomMockup={onUploadCustomMockup}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
