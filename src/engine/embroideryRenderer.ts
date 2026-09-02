@@ -3,6 +3,7 @@ import { findClosestThreadColor, hexToRgb, rgbToHex } from './colorPalettes';
 import { computeAdaptiveStitchField } from './stitchField';
 import { generateStitchPlan } from './stitchPlanner';
 import { renderStitchPlan } from './pathEmbroideryRenderer';
+import { computeObjectStitchFlow } from './objectStitchFlow';
 import {
   LocalSegmentationResult,
   SegmentationProgress,
@@ -195,7 +196,7 @@ export class EmbroideryRenderer {
       // renderer, while MobileSAM supplies clean object-specific stitch flow.
       if (stitchPlan.sourceKind === 'ai-raster' && segmentation?.reliable) {
         constructionMode = 'ai-object-aware';
-        statusMessage = `Local AI: ${segmentation.objects.length} objects`;
+        statusMessage = `Local AI: ${segmentation.objects.length} objects • curved flow`;
       }
     }
 
@@ -215,6 +216,9 @@ export class EmbroideryRenderer {
     const useNaturalThread = settings.renderStyle === 'natural';
     const adaptiveField = useNaturalThread || Boolean(segmentation?.reliable)
       ? computeAdaptiveStitchField(srcPixels, width, height)
+      : null;
+    const objectFlow = segmentation?.reliable
+      ? computeObjectStitchFlow(segmentation)
       : null;
 
     // 4. Prepare Output Buffer
@@ -248,27 +252,11 @@ export class EmbroideryRenderer {
     const sat = (settings.saturation + 100) / 100;
     const adaptiveScaleX = adaptiveField ? adaptiveField.width / width : 0;
     const adaptiveScaleY = adaptiveField ? adaptiveField.height / height : 0;
-    const segmentationScaleX = segmentation?.reliable ? segmentation.width / width : 0;
-    const segmentationScaleY = segmentation?.reliable ? segmentation.height / height : 0;
-    const objectTangentX = segmentation?.reliable
-      ? new Float32Array(segmentation.objects.length + 1)
-      : null;
-    const objectTangentY = segmentation?.reliable
-      ? new Float32Array(segmentation.objects.length + 1)
-      : null;
-    const objectDirectionWeight = segmentation?.reliable
-      ? new Float32Array(segmentation.objects.length + 1)
-      : null;
-    if (segmentation?.reliable && objectTangentX && objectTangentY && objectDirectionWeight) {
-      for (const object of segmentation.objects) {
-        // Satin/fill stitches normally cross a narrow object rather than travel
-        // along its long axis, so rotate the detected principal direction 90°.
-        const radians = ((object.directionDegrees + 90) * Math.PI) / 180;
-        objectTangentX[object.id] = Math.cos(radians);
-        objectTangentY[object.id] = Math.sin(radians);
-        objectDirectionWeight[object.id] = 0.2 + object.directionConfidence * 0.72;
-      }
-    }
+    const objectFlowScaleX = objectFlow ? objectFlow.width / width : 0;
+    const objectFlowScaleY = objectFlow ? objectFlow.height / height : 0;
+    const objectFlowCoordinateScale = objectFlow
+      ? Math.sqrt(objectFlowScaleX * objectFlowScaleY)
+      : 0;
 
     // 5. SYNTHESIZE 3D THREAD GEOMETRY & ANISOTROPIC OPTICS
     for (let y = 0; y < height; y++) {
@@ -287,15 +275,56 @@ export class EmbroideryRenderer {
           ? Math.min(adaptiveField.height - 1, Math.floor(y * adaptiveScaleY))
           : 0;
         const adaptiveIndex = adaptiveField ? adaptiveY * adaptiveField.width + adaptiveX : 0;
-        const segmentationX = segmentation?.reliable
-          ? Math.min(segmentation.width - 1, Math.floor(x * segmentationScaleX))
-          : 0;
-        const segmentationY = segmentation?.reliable
-          ? Math.min(segmentation.height - 1, Math.floor(y * segmentationScaleY))
-          : 0;
-        const objectLabel = segmentation?.reliable
-          ? segmentation.labels[segmentationY * segmentation.width + segmentationX]
-          : 0;
+        let objectLabel = 0;
+        let objectFlowConfidence = 0;
+        let sampledObjectFlowX = 0;
+        let sampledObjectFlowY = 0;
+        let sampledRowCoordinate = 0;
+        let sampledLongCoordinate = 0;
+        if (objectFlow) {
+          const fieldX = Math.max(0, Math.min(objectFlow.width - 1, (x + 0.5) * objectFlowScaleX - 0.5));
+          const fieldY = Math.max(0, Math.min(objectFlow.height - 1, (y + 0.5) * objectFlowScaleY - 0.5));
+          const x0 = Math.floor(fieldX);
+          const y0 = Math.floor(fieldY);
+          const x1 = Math.min(objectFlow.width - 1, x0 + 1);
+          const y1 = Math.min(objectFlow.height - 1, y0 + 1);
+          const fractionX = fieldX - x0;
+          const fractionY = fieldY - y0;
+          const nearestX = fractionX < 0.5 ? x0 : x1;
+          const nearestY = fractionY < 0.5 ? y0 : y1;
+          objectLabel = objectFlow.labels[nearestY * objectFlow.width + nearestX];
+
+          if (objectLabel > 0) {
+            let weightSum = 0;
+            let confidenceSum = 0;
+            for (let sampleY = y0; sampleY <= y1; sampleY++) {
+              const yWeight = sampleY === y0 ? 1 - fractionY : fractionY;
+              for (let sampleX = x0; sampleX <= x1; sampleX++) {
+                const xWeight = sampleX === x0 ? 1 - fractionX : fractionX;
+                const sampleWeight = xWeight * yWeight;
+                const sampleIndex = sampleY * objectFlow.width + sampleX;
+                if (objectFlow.labels[sampleIndex] !== objectLabel || sampleWeight <= 0) continue;
+                sampledObjectFlowX += objectFlow.tangentX[sampleIndex] * sampleWeight;
+                sampledObjectFlowY += objectFlow.tangentY[sampleIndex] * sampleWeight;
+                sampledRowCoordinate += objectFlow.rowCoordinate[sampleIndex] * sampleWeight;
+                sampledLongCoordinate += objectFlow.longCoordinate[sampleIndex] * sampleWeight;
+                confidenceSum += objectFlow.confidence[sampleIndex] * sampleWeight;
+                weightSum += sampleWeight;
+              }
+            }
+            if (weightSum > 0) {
+              const flowLength = Math.hypot(sampledObjectFlowX, sampledObjectFlowY);
+              if (flowLength > 0.001) {
+                sampledObjectFlowX /= flowLength;
+                sampledObjectFlowY /= flowLength;
+              }
+              const interpolationCoherence = Math.min(1, flowLength / weightSum);
+              objectFlowConfidence = (confidenceSum / weightSum) * interpolationCoherence;
+              sampledRowCoordinate /= weightSum;
+              sampledLongCoordinate /= weightSum;
+            }
+          }
+        }
         const internalBoundaryInfluence = adaptiveField
           ? adaptiveField.boundaryProximity[adaptiveIndex] *
             Math.max(
@@ -384,15 +413,19 @@ export class EmbroideryRenderer {
           let localTanX = cosAngle;
           let localTanY = sinAngle;
 
-          if (
-            objectLabel > 0 &&
-            objectTangentX &&
-            objectTangentY &&
-            objectDirectionWeight
-          ) {
-            const weight = objectDirectionWeight[objectLabel] || 0;
-            const blendedX = localTanX * (1 - weight) + objectTangentX[objectLabel] * weight;
-            const blendedY = localTanY * (1 - weight) + objectTangentY[objectLabel] * weight;
+          if (objectLabel > 0 && objectFlow && objectFlowConfidence > 0) {
+            let flowX = sampledObjectFlowX;
+            let flowY = sampledObjectFlowY;
+            // Stitch directions are undirected: theta and theta + 180 degrees
+            // describe the same strand. Align signs before blending to prevent
+            // false cancellations at a mask's medial axis.
+            if (flowX * localTanX + flowY * localTanY < 0) {
+              flowX = -flowX;
+              flowY = -flowY;
+            }
+            const weight = Math.min(0.88, 0.25 + objectFlowConfidence * 0.62);
+            const blendedX = localTanX * (1 - weight) + flowX * weight;
+            const blendedY = localTanY * (1 - weight) + flowY * weight;
             const length = Math.hypot(blendedX, blendedY) || 1;
             localTanX = blendedX / length;
             localTanY = blendedY / length;
@@ -405,7 +438,13 @@ export class EmbroideryRenderer {
               regionNormalX = -regionNormalX;
               regionNormalY = -regionNormalY;
             }
-            const regionWeight = Math.min(0.78, internalBoundaryInfluence * 0.78);
+            // The AI shape field owns macro stitch construction. Internal color
+            // gradients still add detail, but cannot wash the object flow out.
+            const maximumRegionWeight = objectLabel > 0 ? 0.25 : 0.78;
+            const regionWeight = Math.min(
+              maximumRegionWeight,
+              internalBoundaryInfluence * maximumRegionWeight
+            );
             const blendedX = localTanX * (1 - regionWeight) + regionNormalX * regionWeight;
             const blendedY = localTanY * (1 - regionWeight) + regionNormalY * regionWeight;
             const blendedLength = Math.sqrt(blendedX * blendedX + blendedY * blendedY) || 1;
@@ -415,10 +454,17 @@ export class EmbroideryRenderer {
 
           const edgeNormal = edgeNormals[y * width + x];
           if (edgeNormal && d <= 24 * targetScale) {
-            // Contour flow vector along local feature curve
-            const flowX = -edgeNormal.ny;
-            const flowY = edgeNormal.nx;
-            const contourWeight = Math.max(0, 1 - d / (24 * targetScale)) * 0.7;
+            // Surface rendering follows the contour. AI Object-Aware uses the
+            // inward normal instead, producing believable satin turns across
+            // leaves, petals, feathers, and other segmented columns.
+            let flowX = objectLabel > 0 ? edgeNormal.nx : -edgeNormal.ny;
+            let flowY = objectLabel > 0 ? edgeNormal.ny : edgeNormal.nx;
+            if (flowX * localTanX + flowY * localTanY < 0) {
+              flowX = -flowX;
+              flowY = -flowY;
+            }
+            const contourStrength = objectLabel > 0 ? 0.44 : 0.7;
+            const contourWeight = Math.max(0, 1 - d / (24 * targetScale)) * contourStrength;
             const bx = localTanX * (1 - contourWeight) + flowX * contourWeight;
             const by = localTanY * (1 - contourWeight) + flowY * contourWeight;
             const blen = Math.sqrt(bx * bx + by * by) || 1.0;
@@ -435,14 +481,31 @@ export class EmbroideryRenderer {
           const localRowSpacing = rowSpacing * (1 - internalBoundaryInfluence * 0.16);
           const localSegmentLength = segmentLen * (1 + internalBoundaryInfluence * 0.18);
 
-          const rowCoord = x * perpX + y * perpY;
+          // A changing local angle multiplied by canvas-global coordinates can
+          // make the procedural row phase jump. Anchor AI stitches to their own
+          // object centroid so curved columns remain continuous and clean.
+          const phaseOriginX = objectLabel > 0 && objectFlow
+            ? objectFlow.centroidX[objectLabel] / objectFlowScaleX
+            : 0;
+          const phaseOriginY = objectLabel > 0 && objectFlow
+            ? objectFlow.centroidY[objectLabel] / objectFlowScaleY
+            : 0;
+          const phaseX = x - phaseOriginX;
+          const phaseY = y - phaseOriginY;
+          const rowCoord = objectLabel > 0 && objectFlowCoordinateScale > 0
+            ? sampledRowCoordinate / objectFlowCoordinateScale
+            : phaseX * perpX + phaseY * perpY;
           const rowIndex = Math.floor(rowCoord / localRowSpacing);
           const rowMod = ((rowCoord % localRowSpacing) + localRowSpacing) % localRowSpacing;
           const normRowPos = (rowMod / localRowSpacing) * 2 - 1; // -1 to 1 across thread width
 
           // Stagger alternate rows (1/3 segment offset)
           const staggerOffset = (Math.abs(rowIndex) % 3) * (localSegmentLength / 3);
-          const longCoord = x * tangentX + y * tangentY + staggerOffset;
+          const longCoord = (
+            objectLabel > 0 && objectFlowCoordinateScale > 0
+              ? sampledLongCoordinate / objectFlowCoordinateScale
+              : phaseX * tangentX + phaseY * tangentY
+          ) + staggerOffset;
           const segMod = ((longCoord % localSegmentLength) + localSegmentLength) % localSegmentLength;
           const normSegPos = (segMod / localSegmentLength) * 2 - 1; // -1 to 1 along segment
 

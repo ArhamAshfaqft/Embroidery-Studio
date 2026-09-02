@@ -6,6 +6,7 @@ import { SmartOptimizer } from '../src/engine/smartOptimizer';
 import { computeAdaptiveStitchField } from '../src/engine/stitchField';
 import { generateStitchPlan } from '../src/engine/stitchPlanner';
 import type { LocalSegmentationResult } from '../src/engine/localSegmentation';
+import { computeObjectStitchFlow } from '../src/engine/objectStitchFlow';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -166,5 +167,54 @@ const aiPlan = generateStitchPlan(
 );
 assert(aiPlan.sourceKind === 'ai-raster', 'Planner identifies a reliable local-AI raster map');
 assert(aiPlan.regions.length >= 2, 'AI masks keep touching same-color objects separate');
+
+// Test 9: Dense Curved Object Stitch Flow
+console.log('\n9. Testing Dense Curved Object Stitch Flow...');
+const flowWidth = 72;
+const flowHeight = 64;
+const flowLabels = new Uint16Array(flowWidth * flowHeight);
+for (let y = 8; y <= 21; y++) {
+  for (let x = 6; x <= 60; x++) flowLabels[y * flowWidth + x] = 1;
+}
+for (let y = 36; y <= 52; y++) {
+  for (let x = 26; x <= 42; x++) {
+    if (Math.hypot(x - 34, y - 44) <= 8) flowLabels[y * flowWidth + x] = 2;
+  }
+}
+const flowSegmentation: LocalSegmentationResult = {
+  width: flowWidth,
+  height: flowHeight,
+  labels: flowLabels,
+  objects: [
+    { id: 1, score: 0.95, areaPx: 770, bounds: { x: 6, y: 8, width: 55, height: 14 }, directionDegrees: 0, directionConfidence: 0.9 },
+    { id: 2, score: 0.94, areaPx: 197, bounds: { x: 26, y: 36, width: 17, height: 17 }, directionDegrees: 0, directionConfidence: 0 }
+  ],
+  foregroundCoverage: 1,
+  reliable: true,
+  provider: 'MobileSAM ONNX'
+};
+const curvedFlow = computeObjectStitchFlow(flowSegmentation);
+const horizontalColumnSample = 12 * curvedFlow.width + 33;
+assert(
+  Math.abs(curvedFlow.tangentY[horizontalColumnSample]) > Math.abs(curvedFlow.tangentX[horizontalColumnSample]),
+  'Elongated objects receive cross-column satin direction instead of one along-axis fill'
+);
+const circleRight = 44 * curvedFlow.width + 40;
+const circleTop = 38 * curvedFlow.width + 34;
+assert(
+  Math.abs(curvedFlow.tangentX[circleRight]) > Math.abs(curvedFlow.tangentY[circleRight]) &&
+    Math.abs(curvedFlow.tangentY[circleTop]) > Math.abs(curvedFlow.tangentX[circleTop]),
+  'Compact objects receive a curved radial field rather than one global angle'
+);
+assert(
+  curvedFlow.confidence[circleRight] > 0.5 && curvedFlow.confidence[circleTop] > 0.5,
+  'Object flow exposes confident per-pixel directions for the renderer'
+);
+assert(
+  Number.isFinite(curvedFlow.rowCoordinate[circleRight]) &&
+    Number.isFinite(curvedFlow.longCoordinate[circleRight]) &&
+    Math.abs(curvedFlow.rowCoordinate[circleRight] - curvedFlow.rowCoordinate[circleRight - 1]) < 3,
+  'Curved stitch directions are integrated into continuous procedural row phases'
+);
 
 console.log('\n--- ALL ENGINE TESTS PASSED SUCCESSFULLY! ---');
