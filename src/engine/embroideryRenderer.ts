@@ -3,6 +3,11 @@ import { findClosestThreadColor, hexToRgb, rgbToHex } from './colorPalettes';
 import { computeAdaptiveStitchField } from './stitchField';
 import { generateStitchPlan } from './stitchPlanner';
 import { renderStitchPlan } from './pathEmbroideryRenderer';
+import {
+  LocalSegmentationResult,
+  SegmentationProgress,
+  segmentArtworkLocally
+} from './localSegmentation';
 
 /**
  * Raven High-Fidelity Wilcom-Grade Procedural Embroidery Engine
@@ -15,6 +20,9 @@ export interface RenderResult {
   width: number;
   height: number;
   renderTimeMs: number;
+  constructionMode?: 'surface' | 'vector-paths' | 'raster-paths' | 'ai-object-aware' | 'safe-fallback';
+  objectCount?: number;
+  statusMessage?: string;
 }
 
 interface ColorCluster {
@@ -33,12 +41,54 @@ export class EmbroideryRenderer {
   }
 
   /**
+   * Asynchronous entry point used by the UI and export pipeline. Raster artwork
+   * in Object-Aware mode is segmented by the bundled MobileSAM model first;
+   * SVG and Surface renders remain instant and unchanged.
+   */
+  public async renderEmbroideryAsync(
+    sourceImage: HTMLImageElement | HTMLCanvasElement,
+    settings: EmbroiderySettings,
+    targetScale = 1,
+    onProgress?: SegmentationProgress
+  ): Promise<RenderResult> {
+    const sourceUrl =
+      typeof HTMLImageElement !== 'undefined' && sourceImage instanceof HTMLImageElement
+        ? sourceImage.src
+        : '';
+    const isVector = sourceUrl.startsWith('data:image/svg+xml');
+    if (settings.stitchPlanningMode !== 'object-aware' || isVector) {
+      return this.renderEmbroidery(sourceImage, settings, targetScale);
+    }
+    try {
+      const segmentation = await segmentArtworkLocally(sourceImage, onProgress);
+      if (segmentation.reliable) {
+        return this.renderEmbroidery(sourceImage, settings, targetScale, segmentation);
+      }
+      const fallback = this.renderEmbroidery(sourceImage, settings, targetScale);
+      return {
+        ...fallback,
+        constructionMode: 'safe-fallback',
+        statusMessage: 'AI fallback: Surface (low confidence)'
+      };
+    } catch (error) {
+      console.warn('Local MobileSAM segmentation was unavailable. Using safe fallback.', error);
+      const fallback = this.renderEmbroidery(sourceImage, settings, targetScale);
+      return {
+        ...fallback,
+        constructionMode: 'safe-fallback',
+        statusMessage: 'AI unavailable: Surface fallback'
+      };
+    }
+  }
+
+  /**
    * Main rendering pipeline: transforms any flat AI artwork into Wilcom-grade 3D physical embroidery
    */
   public renderEmbroidery(
     sourceImage: HTMLImageElement | HTMLCanvasElement,
     settings: EmbroiderySettings,
-    targetScale = 1
+    targetScale = 1,
+    segmentation?: LocalSegmentationResult
   ): RenderResult {
     const startTime = performance.now();
 
@@ -77,6 +127,12 @@ export class EmbroideryRenderer {
       };
     }
 
+    let constructionMode: RenderResult['constructionMode'] =
+      settings.stitchPlanningMode === 'object-aware' ? 'safe-fallback' : 'surface';
+    let statusMessage = settings.stitchPlanningMode === 'object-aware'
+      ? 'Object-Aware: Surface fallback'
+      : 'Surface rendering';
+
     // Object-aware construction is deliberately isolated from the two proven
     // surface engines. It segments the artwork, creates real needle paths, then
     // lets Classic or Natural provide the final thread material response.
@@ -85,7 +141,14 @@ export class EmbroideryRenderer {
         typeof HTMLImageElement !== 'undefined' && sourceImage instanceof HTMLImageElement
           ? sourceImage.src
           : '';
-      const stitchPlan = generateStitchPlan(srcPixels, width, height, settings, sourceUrl);
+      const stitchPlan = generateStitchPlan(
+        srcPixels,
+        width,
+        height,
+        settings,
+        sourceUrl,
+        segmentation
+      );
       const smallRegionCutoff = Math.max(12, stitchPlan.analysisWidth * stitchPlan.analysisHeight * 0.00005);
       const smallRegionShare = stitchPlan.regions.length > 0
         ? stitchPlan.regions.filter((region) => region.areaPx < smallRegionCutoff).length / stitchPlan.regions.length
@@ -105,7 +168,8 @@ export class EmbroideryRenderer {
       });
       const reliablePathPreview =
         stitchPlan.sourceKind === 'vector' ||
-        (stitchPlan.regions.length <= 20 &&
+        (stitchPlan.sourceKind === 'raster' &&
+          stitchPlan.regions.length <= 20 &&
           smallRegionShare <= 0.45 &&
           !hasBranchedColorNetwork &&
           !hasSparseSpanningColorNetwork);
@@ -120,8 +184,18 @@ export class EmbroideryRenderer {
           canvas: pathCanvas,
           width,
           height,
-          renderTimeMs: performance.now() - startTime
+          renderTimeMs: performance.now() - startTime,
+          constructionMode: stitchPlan.sourceKind === 'vector' ? 'vector-paths' : 'raster-paths',
+          objectCount: stitchPlan.regions.length,
+          statusMessage: `${stitchPlan.regions.length} planned stitch regions`
         };
+      }
+
+      // Complex raster artwork keeps the proven high-fidelity Surface material
+      // renderer, while MobileSAM supplies clean object-specific stitch flow.
+      if (stitchPlan.sourceKind === 'ai-raster' && segmentation?.reliable) {
+        constructionMode = 'ai-object-aware';
+        statusMessage = `Local AI: ${segmentation.objects.length} objects`;
       }
     }
 
@@ -139,7 +213,7 @@ export class EmbroideryRenderer {
       settings.borderThickness * targetScale
     );
     const useNaturalThread = settings.renderStyle === 'natural';
-    const adaptiveField = useNaturalThread
+    const adaptiveField = useNaturalThread || Boolean(segmentation?.reliable)
       ? computeAdaptiveStitchField(srcPixels, width, height)
       : null;
 
@@ -174,6 +248,27 @@ export class EmbroideryRenderer {
     const sat = (settings.saturation + 100) / 100;
     const adaptiveScaleX = adaptiveField ? adaptiveField.width / width : 0;
     const adaptiveScaleY = adaptiveField ? adaptiveField.height / height : 0;
+    const segmentationScaleX = segmentation?.reliable ? segmentation.width / width : 0;
+    const segmentationScaleY = segmentation?.reliable ? segmentation.height / height : 0;
+    const objectTangentX = segmentation?.reliable
+      ? new Float32Array(segmentation.objects.length + 1)
+      : null;
+    const objectTangentY = segmentation?.reliable
+      ? new Float32Array(segmentation.objects.length + 1)
+      : null;
+    const objectDirectionWeight = segmentation?.reliable
+      ? new Float32Array(segmentation.objects.length + 1)
+      : null;
+    if (segmentation?.reliable && objectTangentX && objectTangentY && objectDirectionWeight) {
+      for (const object of segmentation.objects) {
+        // Satin/fill stitches normally cross a narrow object rather than travel
+        // along its long axis, so rotate the detected principal direction 90°.
+        const radians = ((object.directionDegrees + 90) * Math.PI) / 180;
+        objectTangentX[object.id] = Math.cos(radians);
+        objectTangentY[object.id] = Math.sin(radians);
+        objectDirectionWeight[object.id] = 0.2 + object.directionConfidence * 0.72;
+      }
+    }
 
     // 5. SYNTHESIZE 3D THREAD GEOMETRY & ANISOTROPIC OPTICS
     for (let y = 0; y < height; y++) {
@@ -192,6 +287,15 @@ export class EmbroideryRenderer {
           ? Math.min(adaptiveField.height - 1, Math.floor(y * adaptiveScaleY))
           : 0;
         const adaptiveIndex = adaptiveField ? adaptiveY * adaptiveField.width + adaptiveX : 0;
+        const segmentationX = segmentation?.reliable
+          ? Math.min(segmentation.width - 1, Math.floor(x * segmentationScaleX))
+          : 0;
+        const segmentationY = segmentation?.reliable
+          ? Math.min(segmentation.height - 1, Math.floor(y * segmentationScaleY))
+          : 0;
+        const objectLabel = segmentation?.reliable
+          ? segmentation.labels[segmentationY * segmentation.width + segmentationX]
+          : 0;
         const internalBoundaryInfluence = adaptiveField
           ? adaptiveField.boundaryProximity[adaptiveIndex] *
             Math.max(
@@ -279,6 +383,20 @@ export class EmbroideryRenderer {
           // --- TATAMI WEAVE FILL WITH ADAPTIVE TURNING STITCHES ---
           let localTanX = cosAngle;
           let localTanY = sinAngle;
+
+          if (
+            objectLabel > 0 &&
+            objectTangentX &&
+            objectTangentY &&
+            objectDirectionWeight
+          ) {
+            const weight = objectDirectionWeight[objectLabel] || 0;
+            const blendedX = localTanX * (1 - weight) + objectTangentX[objectLabel] * weight;
+            const blendedY = localTanY * (1 - weight) + objectTangentY[objectLabel] * weight;
+            const length = Math.hypot(blendedX, blendedY) || 1;
+            localTanX = blendedX / length;
+            localTanY = blendedY / length;
+          }
 
           if (adaptiveField && internalBoundaryInfluence > 0.015) {
             let regionNormalX = adaptiveField.normalX[adaptiveIndex];
@@ -454,7 +572,10 @@ export class EmbroideryRenderer {
       canvas: finalCanvas,
       width,
       height,
-      renderTimeMs: performance.now() - startTime
+      renderTimeMs: performance.now() - startTime,
+      constructionMode,
+      objectCount: segmentation?.reliable ? segmentation.objects.length : undefined,
+      statusMessage
     };
   }
 

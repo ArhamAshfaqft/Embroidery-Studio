@@ -26,7 +26,7 @@ export class ExportEngine {
     options: ExportOptions
   ): Promise<{ blob: Blob; dataUrl: string; width: number; height: number }> {
     const scale = options.resolutionMultiplier || 1;
-    const renderResult = this.embroideryRenderer.renderEmbroidery(sourceImg, settings, scale);
+    const renderResult = await this.embroideryRenderer.renderEmbroideryAsync(sourceImg, settings, scale);
 
     return new Promise((resolve, reject) => {
       const mimeType = getMimeType(options.format);
@@ -65,7 +65,7 @@ export class ExportEngine {
     const targetHeight = mockupImg.naturalHeight ? mockupImg.naturalHeight * scale : 1200 * scale;
 
     // Render high-res embroidery
-    const embResult = this.embroideryRenderer.renderEmbroidery(sourceImg, settings, scale);
+    const embResult = await this.embroideryRenderer.renderEmbroideryAsync(sourceImg, settings, scale);
 
     // Compose onto mockup canvas with fabric wrinkle displacement
     const composedCanvas = this.mockupRenderer.composeMockup(

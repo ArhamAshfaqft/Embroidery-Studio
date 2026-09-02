@@ -184,9 +184,9 @@ export const DockPanel: React.FC<DockPanelProps> = ({
                       : 'border-white/10 bg-[#1b1b22] text-neutral-400 hover:border-white/25'
                   }`}
                 >
-                  <div className="text-[9px] font-bold">Object-Aware</div>
+                  <div className="text-[9px] font-bold">AI Object-Aware</div>
                   <div className={`text-[8px] mt-0.5 ${settings.stitchPlanningMode === 'object-aware' ? 'text-cyan-900/70' : 'text-neutral-500'}`}>
-                    Auto-safe planned paths
+                    Local MobileSAM • automatic
                   </div>
                 </button>
               </div>

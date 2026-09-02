@@ -1,4 +1,5 @@
 import { BorderType, EmbroiderySettings } from '../types';
+import type { LocalSegmentationResult } from './localSegmentation';
 
 export type PlannedStitchType = 'running' | 'satin' | 'tatami' | 'border';
 export type StitchCommandType = 'stitch' | 'jump' | 'trim' | 'color-change';
@@ -42,7 +43,7 @@ export interface StitchPlan {
   stitchCount: number;
   jumpCount: number;
   trimCount: number;
-  sourceKind: 'raster' | 'vector';
+  sourceKind: 'raster' | 'vector' | 'ai-raster';
 }
 
 interface PaletteColor {
@@ -469,6 +470,37 @@ const assignPaletteLabels = (pixels: Uint8ClampedArray, palette: PaletteColor[])
       }
     }
     labels[pixel] = bestIndex;
+  }
+  return labels;
+};
+
+const combineObjectAndPaletteLabels = (
+  paletteLabels: Int16Array,
+  sampledWidth: number,
+  sampledHeight: number,
+  paletteSize: number,
+  segmentation: LocalSegmentationResult
+) => {
+  const labels = new Int16Array(paletteLabels.length);
+  labels.fill(-1);
+  for (let y = 0; y < sampledHeight; y++) {
+    const segmentationY = Math.min(
+      segmentation.height - 1,
+      Math.floor(((y + 0.5) * segmentation.height) / sampledHeight)
+    );
+    for (let x = 0; x < sampledWidth; x++) {
+      const index = y * sampledWidth + x;
+      const paletteLabel = paletteLabels[index];
+      if (paletteLabel < 0) continue;
+      const segmentationX = Math.min(
+        segmentation.width - 1,
+        Math.floor(((x + 0.5) * segmentation.width) / sampledWidth)
+      );
+      const objectLabel = segmentation.labels[segmentationY * segmentation.width + segmentationX];
+      // Keep residual pixels grouped by their color while making every AI
+      // object/color pair a distinct connected-component namespace.
+      labels[index] = objectLabel * paletteSize + paletteLabel;
+    }
   }
   return labels;
 };
@@ -1040,18 +1072,25 @@ export const generateStitchPlan = (
   sourceWidth: number,
   sourceHeight: number,
   settings: EmbroiderySettings,
-  sourceUrl = ''
+  sourceUrl = '',
+  segmentation?: LocalSegmentationResult
 ): StitchPlan => {
-  const sourceKind: StitchPlan['sourceKind'] = sourceUrl.startsWith('data:image/svg+xml') ? 'vector' : 'raster';
+  const sourceKind: StitchPlan['sourceKind'] = sourceUrl.startsWith('data:image/svg+xml')
+    ? 'vector'
+    : segmentation?.reliable
+      ? 'ai-raster'
+      : 'raster';
   const maximumDimension = sourceKind === 'vector' ? VECTOR_ANALYSIS_DIMENSION : MAX_ANALYSIS_DIMENSION;
   const sampled = downsamplePixels(sourcePixels, sourceWidth, sourceHeight, maximumDimension);
   const maximumColors = sourceKind === 'vector'
     ? clamp(settings.maxColors || 16, 6, 24)
-    : clamp(settings.maxColors || 8, 6, 8);
+    : sourceKind === 'ai-raster'
+      ? clamp(settings.maxColors || 12, 6, 16)
+      : clamp(settings.maxColors || 8, 6, 8);
   const palette = buildPalette(sampled.pixels, maximumColors);
   const rawLabels = assignPaletteLabels(sampled.pixels, palette);
   const cleanupThreshold = Math.max(10, Math.round(sampled.width * sampled.height * 0.00004));
-  const labels = sourceKind === 'raster'
+  const colorLabels = sourceKind !== 'vector'
     ? mergeSmallLabelFragments(
         cleanPaletteLabels(rawLabels, sampled.width, sampled.height),
         sampled.width,
@@ -1059,7 +1098,16 @@ export const generateStitchPlan = (
         cleanupThreshold
       )
     : rawLabels;
-  const minimumArea = sourceKind === 'raster' ? 3 : cleanupThreshold;
+  const labels = sourceKind === 'ai-raster' && segmentation
+    ? combineObjectAndPaletteLabels(
+        colorLabels,
+        sampled.width,
+        sampled.height,
+        palette.length,
+        segmentation
+      )
+    : colorLabels;
+  const minimumArea = sourceKind !== 'vector' ? 3 : cleanupThreshold;
   const vectorComponents = sourceKind === 'vector'
     ? extractSvgComponents(sourceUrl, sampled.pixels, sampled.width, sampled.height, minimumArea)
     : null;

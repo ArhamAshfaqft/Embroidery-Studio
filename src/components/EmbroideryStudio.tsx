@@ -68,11 +68,18 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const cachedEmbroideryCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<EmbroideryRenderer>(new EmbroideryRenderer());
+  const renderGenerationRef = useRef(0);
 
-  const [renderStats, setRenderStats] = useState<{ timeMs: number; width: number; height: number }>({
+  const [renderStats, setRenderStats] = useState<{
+    timeMs: number;
+    width: number;
+    height: number;
+    status: string;
+  }>({
     timeMs: 0,
     width: 0,
-    height: 0
+    height: 0,
+    status: 'Ready'
   });
 
   const [isRendering, setIsRendering] = useState(false);
@@ -184,17 +191,34 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   // Compute 3D Simulation ONLY when settings change
   const recomputeEmbroideryEffect = useCallback(() => {
     if (!sourceImgRef.current) return;
+    const renderGeneration = ++renderGenerationRef.current;
     setIsRendering(true);
+    setRenderStats((current) => ({
+      ...current,
+      status: settings.stitchPlanningMode === 'object-aware'
+        ? 'Starting local AI segmentation…'
+        : 'Rendering…'
+    }));
 
-    requestAnimationFrame(() => {
+    requestAnimationFrame(async () => {
       if (!sourceImgRef.current) return;
-      const result = rendererRef.current.renderEmbroidery(sourceImgRef.current, settings, 1);
+      const result = await rendererRef.current.renderEmbroideryAsync(
+        sourceImgRef.current,
+        settings,
+        1,
+        (message) => {
+          if (renderGeneration !== renderGenerationRef.current) return;
+          setRenderStats((current) => ({ ...current, status: message }));
+        }
+      );
+      if (renderGeneration !== renderGenerationRef.current) return;
       cachedEmbroideryCanvasRef.current = result.canvas;
 
       setRenderStats({
         timeMs: Math.round(result.renderTimeMs),
         width: result.width,
-        height: result.height
+        height: result.height,
+        status: result.statusMessage || 'Ready'
       });
       setIsRendering(false);
       drawCompositeFrame();
@@ -461,6 +485,10 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
                 </span>
                 <span className="text-neutral-700">•</span>
                 <span>Compute: {renderStats.timeMs}ms</span>
+                <span className="text-neutral-700">•</span>
+                <span className={settings.stitchPlanningMode === 'object-aware' ? 'text-cyan-300' : ''}>
+                  {renderStats.status}
+                </span>
                 <span className="text-neutral-700">•</span>
                 <span>Zoom: {Math.round(zoom * 100)}%</span>
                 <span className="text-neutral-700">•</span>

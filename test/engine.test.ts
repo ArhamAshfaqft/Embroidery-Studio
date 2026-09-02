@@ -5,6 +5,7 @@ import { FONT_OPTIONS, renderTextToCanvas, DEFAULT_TEXT_CONFIG } from '../src/en
 import { SmartOptimizer } from '../src/engine/smartOptimizer';
 import { computeAdaptiveStitchField } from '../src/engine/stitchField';
 import { generateStitchPlan } from '../src/engine/stitchPlanner';
+import type { LocalSegmentationResult } from '../src/engine/localSegmentation';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -125,5 +126,45 @@ assert(plannedTypes.has('tatami'), 'Planner classifies broad geometry as tatami 
 assert(planned.regions.some((region) => region.holes.length > 0), 'Planner preserves internal holes in traced geometry');
 assert(planned.stitchCount > 0 && planned.jumpCount > 0 && planned.trimCount > 0, 'Planner emits stitch, jump, tie/trim command sequences');
 assert(planned.colorCount >= 4, 'Planner preserves distinct thread color groups');
+
+// Test 8: Local-AI Object Map Integration
+console.log('\n8. Testing Local-AI Object Map Integration...');
+const aiWidth = 80;
+const aiHeight = 40;
+const aiPixels = new Uint8ClampedArray(aiWidth * aiHeight * 4);
+const aiLabels = new Uint16Array(aiWidth * aiHeight);
+for (let y = 8; y < 32; y++) {
+  for (let x = 8; x < 72; x++) {
+    const index = y * aiWidth + x;
+    const rgba = index * 4;
+    aiPixels[rgba] = 220;
+    aiPixels[rgba + 1] = 40;
+    aiPixels[rgba + 2] = 50;
+    aiPixels[rgba + 3] = 255;
+    aiLabels[index] = x < 40 ? 1 : 2;
+  }
+}
+const aiSegmentation: LocalSegmentationResult = {
+  width: aiWidth,
+  height: aiHeight,
+  labels: aiLabels,
+  objects: [
+    { id: 1, score: 0.94, areaPx: 768, bounds: { x: 8, y: 8, width: 32, height: 24 }, directionDegrees: 0, directionConfidence: 0.8 },
+    { id: 2, score: 0.93, areaPx: 768, bounds: { x: 40, y: 8, width: 32, height: 24 }, directionDegrees: 0, directionConfidence: 0.8 }
+  ],
+  foregroundCoverage: 1,
+  reliable: true,
+  provider: 'MobileSAM ONNX'
+};
+const aiPlan = generateStitchPlan(
+  aiPixels,
+  aiWidth,
+  aiHeight,
+  { ...DEFAULT_EMBROIDERY_SETTINGS, stitchPlanningMode: 'object-aware', borderType: 'none' },
+  '',
+  aiSegmentation
+);
+assert(aiPlan.sourceKind === 'ai-raster', 'Planner identifies a reliable local-AI raster map');
+assert(aiPlan.regions.length >= 2, 'AI masks keep touching same-color objects separate');
 
 console.log('\n--- ALL ENGINE TESTS PASSED SUCCESSFULLY! ---');

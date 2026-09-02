@@ -131,16 +131,21 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
 
   useEffect(() => {
     if (!sourceAsset.dataUrl) return;
+    let cancelled = false;
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    img.onload = async () => {
       sourceImgRef.current = img;
-      const embResult = embroideryRenderer.current.renderEmbroidery(img, settings, 1);
+      const embResult = await embroideryRenderer.current.renderEmbroideryAsync(img, settings, 1);
+      if (cancelled) return;
       embroideryCanvasRef.current = embResult.canvas;
       renderCompositeMockup();
     };
     img.src = sourceAsset.dataUrl;
+    return () => {
+      cancelled = true;
+    };
   }, [sourceAsset.dataUrl, settings]);
 
   useEffect(() => {
