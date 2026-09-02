@@ -4,6 +4,7 @@ import { MOCKUP_TEMPLATES } from '../src/engine/mockupRenderer';
 import { FONT_OPTIONS, renderTextToCanvas, DEFAULT_TEXT_CONFIG } from '../src/engine/textRenderer';
 import { SmartOptimizer } from '../src/engine/smartOptimizer';
 import { computeAdaptiveStitchField } from '../src/engine/stitchField';
+import { generateStitchPlan } from '../src/engine/stitchPlanner';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -77,5 +78,52 @@ const naturalField = computeAdaptiveStitchField(regionPixels, 64, 64);
 const boundaryIndex = 32 * naturalField.width + 31;
 assert(naturalField.boundaryProximity[boundaryIndex] > 0.5, 'Natural Thread detects internal color-region boundaries');
 assert(naturalField.coherence[boundaryIndex] > 0.2, 'Natural Thread calculates a confident local stitch direction');
+
+// Test 7: Object-Aware Stitch Planner
+console.log('\n7. Testing Object-Aware Stitch Planner...');
+const plannerWidth = 128;
+const plannerHeight = 96;
+const plannerPixels = new Uint8ClampedArray(plannerWidth * plannerHeight * 4);
+const paint = (x: number, y: number, r: number, g: number, b: number) => {
+  const index = (y * plannerWidth + x) * 4;
+  plannerPixels[index] = r;
+  plannerPixels[index + 1] = g;
+  plannerPixels[index + 2] = b;
+  plannerPixels[index + 3] = 255;
+};
+
+// Thin red running line.
+for (let y = 5; y <= 6; y++) for (let x = 5; x <= 42; x++) paint(x, y, 235, 30, 40);
+// Narrow green satin column.
+for (let y = 20; y <= 74; y++) for (let x = 5; x <= 12; x++) paint(x, y, 20, 190, 80);
+// Broad blue tatami region.
+for (let y = 24; y <= 72; y++) for (let x = 28; x <= 70; x++) paint(x, y, 30, 90, 220);
+// Gold ring with a genuine internal hole.
+for (let y = 20; y <= 72; y++) {
+  for (let x = 82; x <= 118; x++) {
+    if (x <= 86 || x >= 114 || y <= 24 || y >= 68) paint(x, y, 235, 175, 20);
+  }
+}
+
+const planned = generateStitchPlan(
+  plannerPixels,
+  plannerWidth,
+  plannerHeight,
+  {
+    ...DEFAULT_EMBROIDERY_SETTINGS,
+    stitchPlanningMode: 'object-aware',
+    designWidthMm: 64,
+    borderType: 'none',
+    maxColors: 8
+  }
+);
+const plannedTypes = new Set(planned.regions.map((region) => region.stitchType));
+assert(planned.regions.length >= 4, 'Planner separates independent artwork objects and colors');
+assert(plannedTypes.has('running'), 'Planner classifies hairline geometry as running stitch');
+assert(plannedTypes.has('satin'), 'Planner classifies narrow geometry as satin stitch');
+assert(plannedTypes.has('tatami'), 'Planner classifies broad geometry as tatami fill');
+assert(planned.regions.some((region) => region.holes.length > 0), 'Planner preserves internal holes in traced geometry');
+assert(planned.stitchCount > 0 && planned.jumpCount > 0 && planned.trimCount > 0, 'Planner emits stitch, jump, tie/trim command sequences');
+assert(planned.colorCount >= 4, 'Planner preserves distinct thread color groups');
 
 console.log('\n--- ALL ENGINE TESTS PASSED SUCCESSFULLY! ---');

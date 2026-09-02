@@ -151,6 +151,46 @@ export const DockPanel: React.FC<DockPanelProps> = ({
                 </div>
               </button>
             </div>
+
+            <div className="mt-3 pt-3 border-t border-white/[0.08]">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-[10px] font-semibold text-neutral-300">Stitch Construction</div>
+                  <div className="text-[8px] text-neutral-500 mt-0.5">Choose how stitches are calculated</div>
+                </div>
+                {settings.stitchPlanningMode === 'object-aware' && (
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-300/25 bg-cyan-300/10 rounded px-1.5 py-0.5">
+                    Beta
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onUpdateSettings({ stitchPlanningMode: 'surface' })}
+                  className={`rounded-lg border px-2.5 py-2 text-left transition-all ${
+                    settings.stitchPlanningMode !== 'object-aware'
+                      ? 'border-white/30 bg-[#292931] text-white'
+                      : 'border-white/10 bg-[#1b1b22] text-neutral-400 hover:border-white/25'
+                  }`}
+                >
+                  <div className="text-[9px] font-bold">Surface Engine</div>
+                  <div className="text-[8px] text-neutral-500 mt-0.5">Original proven result</div>
+                </button>
+                <button
+                  onClick={() => onUpdateSettings({ stitchPlanningMode: 'object-aware' })}
+                  className={`rounded-lg border px-2.5 py-2 text-left transition-all ${
+                    settings.stitchPlanningMode === 'object-aware'
+                      ? 'border-cyan-300/60 bg-cyan-300 text-cyan-950'
+                      : 'border-white/10 bg-[#1b1b22] text-neutral-400 hover:border-white/25'
+                  }`}
+                >
+                  <div className="text-[9px] font-bold">Object-Aware</div>
+                  <div className={`text-[8px] mt-0.5 ${settings.stitchPlanningMode === 'object-aware' ? 'text-cyan-900/70' : 'text-neutral-500'}`}>
+                    Real planned paths
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Smart Auto-Tune Trigger Banner */}

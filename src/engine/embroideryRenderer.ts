@@ -1,6 +1,8 @@
 import { EmbroiderySettings, ColorMode } from '../types';
 import { findClosestThreadColor, hexToRgb, rgbToHex } from './colorPalettes';
 import { computeAdaptiveStitchField } from './stitchField';
+import { generateStitchPlan } from './stitchPlanner';
+import { renderStitchPlan } from './pathEmbroideryRenderer';
 
 /**
  * Raven High-Fidelity Wilcom-Grade Procedural Embroidery Engine
@@ -69,6 +71,24 @@ export class EmbroideryRenderer {
     if (!hasContent) {
       return {
         canvas: this.offscreenCanvas,
+        width,
+        height,
+        renderTimeMs: performance.now() - startTime
+      };
+    }
+
+    // Object-aware construction is deliberately isolated from the two proven
+    // surface engines. It segments the artwork, creates real needle paths, then
+    // lets Classic or Natural provide the final thread material response.
+    if (settings.stitchPlanningMode === 'object-aware') {
+      const sourceUrl =
+        typeof HTMLImageElement !== 'undefined' && sourceImage instanceof HTMLImageElement
+          ? sourceImage.src
+          : '';
+      const stitchPlan = generateStitchPlan(srcPixels, width, height, settings, sourceUrl);
+      const pathCanvas = renderStitchPlan(stitchPlan, settings, 1);
+      return {
+        canvas: pathCanvas,
         width,
         height,
         renderTimeMs: performance.now() - startTime

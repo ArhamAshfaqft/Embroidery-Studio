@@ -85,9 +85,50 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     }
   }, [uploadedGraphic?.dataUrl]);
 
-  const handleFileUpload = (file: File) => {
-    if (!file.type.match(/image\/(png|jpeg|jpg|webp)/i)) {
-      alert('Please upload a valid image file (PNG, JPG, JPEG, or WebP).');
+  const handleFileUpload = async (file: File) => {
+    if (!file.type.match(/image\/(png|jpeg|jpg|webp|svg\+xml)/i)) {
+      alert('Please upload a valid image file (PNG, JPG, JPEG, WebP, or SVG).');
+      return;
+    }
+
+    if (file.type.toLowerCase() === 'image/svg+xml') {
+      try {
+        const [source, dataUrl] = await Promise.all([
+          file.text(),
+          new Promise<string>((resolve, reject) => {
+            const dataReader = new FileReader();
+            dataReader.onload = () => resolve(dataReader.result as string);
+            dataReader.onerror = () => reject(dataReader.error);
+            dataReader.readAsDataURL(file);
+          })
+        ]);
+        const documentNode = new DOMParser().parseFromString(source, 'image/svg+xml');
+        if (documentNode.querySelector('parsererror')) throw new Error('Invalid SVG');
+        const svg = documentNode.documentElement;
+        const viewBox = (svg.getAttribute('viewBox') || '')
+          .trim()
+          .split(/[\s,]+/)
+          .map(Number);
+        const numericDimension = (value: string | null) => {
+          const parsed = Number.parseFloat(value || '');
+          return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+        };
+        const width = numericDimension(svg.getAttribute('width')) || viewBox[2] || 1024;
+        const height = numericDimension(svg.getAttribute('height')) || viewBox[3] || 1024;
+
+        const newAsset: SourceAsset = {
+          id: `upload_${Date.now()}`,
+          type: 'image',
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          dataUrl,
+          width,
+          height
+        };
+        setUploadedGraphic(newAsset);
+        setActiveTab('upload');
+      } catch {
+        alert('This SVG could not be read. Please export it as a standard SVG and try again.');
+      }
       return;
     }
 
@@ -231,7 +272,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
                   Click to Browse or Drag Image
                 </div>
                 <div className="text-[11px] text-neutral-400 mt-1">
-                  Supports transparent PNG, JPG, JPEG, WebP
+                  Supports transparent PNG, JPG, JPEG, WebP, SVG
                 </div>
                 <div className="mt-3 flex items-center space-x-1.5 text-[10px] font-mono text-neutral-400 bg-black/40 px-2.5 py-1 rounded-md border border-white/[0.06]">
                   <Clipboard size={10} className="text-neutral-500" />
@@ -240,7 +281,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
                   onChange={(e) => {
                     if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
                   }}

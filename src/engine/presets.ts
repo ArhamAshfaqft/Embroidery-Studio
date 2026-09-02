@@ -3,6 +3,8 @@ import { EmbroideryPreset, EmbroiderySettings } from '../types';
 export const DEFAULT_EMBROIDERY_SETTINGS: EmbroiderySettings = {
   presetId: 'tatami_standard',
   renderStyle: 'classic',
+  stitchPlanningMode: 'surface',
+  designWidthMm: 100,
 
   // Stitch Fill
   stitchAngle: 45,

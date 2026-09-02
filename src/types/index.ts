@@ -8,12 +8,18 @@ export type ColorMode = 'original' | 'monochrome' | 'palette';
 
 export type EmbroideryRenderStyle = 'classic' | 'natural';
 
+export type StitchPlanningMode = 'surface' | 'object-aware';
+
 export interface EmbroiderySettings {
   // Preset identifier
   presetId?: string;
 
   // Rendering engine
   renderStyle: EmbroideryRenderStyle;
+  stitchPlanningMode: StitchPlanningMode;
+
+  // Physical design size used by the object-aware planner
+  designWidthMm: number;
 
   // Stitch Fill
   stitchAngle: number; // 0 to 360 degrees
