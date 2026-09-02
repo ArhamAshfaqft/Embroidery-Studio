@@ -86,13 +86,43 @@ export class EmbroideryRenderer {
           ? sourceImage.src
           : '';
       const stitchPlan = generateStitchPlan(srcPixels, width, height, settings, sourceUrl);
-      const pathCanvas = renderStitchPlan(stitchPlan, settings, 1);
-      return {
-        canvas: pathCanvas,
-        width,
-        height,
-        renderTimeMs: performance.now() - startTime
-      };
+      const smallRegionCutoff = Math.max(12, stitchPlan.analysisWidth * stitchPlan.analysisHeight * 0.00005);
+      const smallRegionShare = stitchPlan.regions.length > 0
+        ? stitchPlan.regions.filter((region) => region.areaPx < smallRegionCutoff).length / stitchPlan.regions.length
+        : 1;
+      const totalCenterlineBranches = stitchPlan.regions.reduce(
+        (sum, region) => sum + region.centerlines.length,
+        0
+      );
+      const hasBranchedColorNetwork =
+        stitchPlan.regions.some((region) => region.centerlines.length > 18) ||
+        totalCenterlineBranches > Math.max(24, stitchPlan.regions.length * 7);
+      const analysisArea = stitchPlan.analysisWidth * stitchPlan.analysisHeight;
+      const hasSparseSpanningColorNetwork = stitchPlan.regions.some((region) => {
+        const boundsArea = region.bounds.width * region.bounds.height;
+        const fillRatio = region.areaPx / Math.max(1, boundsArea);
+        return boundsArea > analysisArea * 0.08 && fillRatio < 0.24;
+      });
+      const reliablePathPreview =
+        stitchPlan.sourceKind === 'vector' ||
+        (stitchPlan.regions.length <= 20 &&
+          smallRegionShare <= 0.45 &&
+          !hasBranchedColorNetwork &&
+          !hasSparseSpanningColorNetwork);
+
+      // Pure stitch paths are excellent for clean/vector objects but shaded
+      // raster illustrations can fragment into hundreds of false objects. Keep
+      // their real plan for future machine export while using the proven surface
+      // renderer for the beauty preview instead of showing broken wireframes.
+      if (reliablePathPreview) {
+        const pathCanvas = renderStitchPlan(stitchPlan, settings, 1);
+        return {
+          canvas: pathCanvas,
+          width,
+          height,
+          renderTimeMs: performance.now() - startTime
+        };
+      }
     }
 
     // 2. Thread Spool Color Processing (Preserves 100% exact colors or optional quantization)

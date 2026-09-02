@@ -186,7 +186,7 @@ export const DockPanel: React.FC<DockPanelProps> = ({
                 >
                   <div className="text-[9px] font-bold">Object-Aware</div>
                   <div className={`text-[8px] mt-0.5 ${settings.stitchPlanningMode === 'object-aware' ? 'text-cyan-900/70' : 'text-neutral-500'}`}>
-                    Real planned paths
+                    Auto-safe planned paths
                   </div>
                 </button>
               </div>

@@ -445,7 +445,10 @@ const buildPalette = (pixels: Uint8ClampedArray, maximumColors: number) => {
   for (const candidate of candidates) {
     if (palette.length >= maximumColors) break;
     const nearest = palette.reduce((best, color) => Math.min(best, colorDistanceSquared(candidate.r, candidate.g, candidate.b, color)), INF);
-    if (nearest > 18 * 18 || palette.length < Math.min(4, maximumColors)) palette.push(candidate);
+    // Thread palettes should consolidate near-identical antialiased shades. A
+    // looser threshold prevents one painted edge from becoming many tiny stitch
+    // objects while preserving visibly different thread colors.
+    if (nearest > 40 * 40 || palette.length < Math.min(4, maximumColors)) palette.push(candidate);
   }
   return palette.length > 0 ? palette : [{ r: 127, g: 127, b: 127, count: 1 }];
 };
@@ -470,6 +473,86 @@ const assignPaletteLabels = (pixels: Uint8ClampedArray, palette: PaletteColor[])
   return labels;
 };
 
+const cleanPaletteLabels = (source: Int16Array, width: number, height: number) => {
+  let current = new Int16Array(source);
+  for (let pass = 0; pass < 2; pass++) {
+    const next = new Int16Array(current);
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const index = y * width + x;
+        if (current[index] < 0) continue;
+        const counts = new Map<number, number>();
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            const label = current[(y + oy) * width + x + ox];
+            if (label >= 0) counts.set(label, (counts.get(label) || 0) + 1);
+          }
+        }
+        let bestLabel = current[index];
+        let bestCount = counts.get(bestLabel) || 0;
+        for (const [label, count] of counts) {
+          if (count > bestCount) {
+            bestLabel = label;
+            bestCount = count;
+          }
+        }
+        if (bestLabel !== current[index] && bestCount >= 6) next[index] = bestLabel;
+      }
+    }
+    current = next;
+  }
+  return current;
+};
+
+const mergeSmallLabelFragments = (source: Int16Array, width: number, height: number, threshold: number) => {
+  const labels = new Int16Array(source);
+  const visited = new Uint8Array(labels.length);
+  const queue = new Int32Array(labels.length);
+  for (let start = 0; start < labels.length; start++) {
+    if (visited[start] || labels[start] < 0) continue;
+    const sourceLabel = labels[start];
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = start;
+    visited[start] = 1;
+    const pixels: number[] = [];
+    const neighboringLabels = new Map<number, number>();
+    while (head < tail) {
+      const pixel = queue[head++];
+      pixels.push(pixel);
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          if (ox === 0 && oy === 0) continue;
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const next = ny * width + nx;
+          const nextLabel = labels[next];
+          if (nextLabel === sourceLabel && !visited[next]) {
+            visited[next] = 1;
+            queue[tail++] = next;
+          } else if (nextLabel >= 0 && nextLabel !== sourceLabel) {
+            neighboringLabels.set(nextLabel, (neighboringLabels.get(nextLabel) || 0) + 1);
+          }
+        }
+      }
+    }
+    if (pixels.length >= threshold || neighboringLabels.size === 0) continue;
+    let replacement = sourceLabel;
+    let strongestBoundary = 0;
+    for (const [label, count] of neighboringLabels) {
+      if (count > strongestBoundary) {
+        replacement = label;
+        strongestBoundary = count;
+      }
+    }
+    for (const pixel of pixels) labels[pixel] = replacement;
+  }
+  return labels;
+};
+
 const findComponents = (
   labels: Int16Array,
   pixels: Uint8ClampedArray,
@@ -480,8 +563,6 @@ const findComponents = (
   const visited = new Uint8Array(labels.length);
   const queue = new Int32Array(labels.length);
   const components: Component[] = [];
-  const directions = [-1, 1, -width, width];
-
   for (let start = 0; start < labels.length; start++) {
     if (visited[start] || labels[start] < 0) continue;
     const paletteIndex = labels[start];
@@ -512,12 +593,17 @@ const findComponents = (
       green += pixels[sourceIndex + 1];
       blue += pixels[sourceIndex + 2];
 
-      for (const direction of directions) {
-        const next = pixel + direction;
-        if (next < 0 || next >= labels.length || visited[next] || labels[next] !== paletteIndex) continue;
-        if ((direction === -1 || direction === 1) && Math.floor(next / width) !== y) continue;
-        visited[next] = 1;
-        queue[tail++] = next;
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          if (ox === 0 && oy === 0) continue;
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const next = ny * width + nx;
+          if (visited[next] || labels[next] !== paletteIndex) continue;
+          visited[next] = 1;
+          queue[tail++] = next;
+        }
       }
     }
 
@@ -777,26 +863,31 @@ const createRunningSequences = (work: RegionWork, stitchLengthPixels: number) =>
   });
 };
 
-const createSatinSequences = (work: RegionWork, stitchLengthPixels: number) => {
-  const centerline = work.region.centerlines[0];
-  if (!centerline || centerline.length < 2) {
+const createSatinSequences = (work: RegionWork, rowSpacingPixels: number, stitchLengthPixels: number) => {
+  const centerlines = work.region.centerlines
+    .filter((line) => line.length >= 2 && polylineLength(line) >= Math.max(2, rowSpacingPixels * 1.4))
+    .slice(0, 16);
+  if (centerlines.length === 0) {
     createRunningSequences(work, stitchLengthPixels);
     return;
   }
-  const sampledCenterline = resamplePolyline(centerline, Math.max(0.75, stitchLengthPixels * 0.55));
-  work.sequences.push({ points: sampledCenterline, type: 'running', underlay: true });
-  const satinPoints: StitchPoint[] = [];
-  for (let i = 0; i < sampledCenterline.length; i++) {
-    const previous = sampledCenterline[Math.max(0, i - 1)];
-    const next = sampledCenterline[Math.min(sampledCenterline.length - 1, i + 1)];
-    const tangentLength = Math.hypot(next.x - previous.x, next.y - previous.y) || 1;
-    const normalX = -(next.y - previous.y) / tangentLength;
-    const normalY = (next.x - previous.x) / tangentLength;
-    const left = castToBoundary(work, sampledCenterline[i], normalX, normalY, 1);
-    const right = castToBoundary(work, sampledCenterline[i], normalX, normalY, -1);
-    satinPoints.push(left, right);
+  for (const centerline of centerlines) {
+    const underlayCenterline = resamplePolyline(centerline, Math.max(1.2, stitchLengthPixels));
+    const sampledCenterline = resamplePolyline(centerline, Math.max(0.65, rowSpacingPixels * 0.72));
+    work.sequences.push({ points: underlayCenterline, type: 'running', underlay: true });
+    const satinPoints: StitchPoint[] = [];
+    for (let i = 0; i < sampledCenterline.length; i++) {
+      const previous = sampledCenterline[Math.max(0, i - 1)];
+      const next = sampledCenterline[Math.min(sampledCenterline.length - 1, i + 1)];
+      const tangentLength = Math.hypot(next.x - previous.x, next.y - previous.y) || 1;
+      const normalX = -(next.y - previous.y) / tangentLength;
+      const normalY = (next.x - previous.x) / tangentLength;
+      const left = castToBoundary(work, sampledCenterline[i], normalX, normalY, 1);
+      const right = castToBoundary(work, sampledCenterline[i], normalX, normalY, -1);
+      if (distance(left, right) >= 0.75) satinPoints.push(left, right);
+    }
+    if (satinPoints.length >= 4) work.sequences.push({ points: satinPoints, type: 'satin', underlay: false });
   }
-  if (satinPoints.length >= 4) work.sequences.push({ points: satinPoints, type: 'satin', underlay: false });
 };
 
 const createTatamiSequences = (
@@ -954,10 +1045,21 @@ export const generateStitchPlan = (
   const sourceKind: StitchPlan['sourceKind'] = sourceUrl.startsWith('data:image/svg+xml') ? 'vector' : 'raster';
   const maximumDimension = sourceKind === 'vector' ? VECTOR_ANALYSIS_DIMENSION : MAX_ANALYSIS_DIMENSION;
   const sampled = downsamplePixels(sourcePixels, sourceWidth, sourceHeight, maximumDimension);
-  const maximumColors = clamp(settings.maxColors || 16, 6, 24);
+  const maximumColors = sourceKind === 'vector'
+    ? clamp(settings.maxColors || 16, 6, 24)
+    : clamp(settings.maxColors || 8, 6, 8);
   const palette = buildPalette(sampled.pixels, maximumColors);
-  const labels = assignPaletteLabels(sampled.pixels, palette);
-  const minimumArea = Math.max(3, Math.round(sampled.width * sampled.height * 0.000012));
+  const rawLabels = assignPaletteLabels(sampled.pixels, palette);
+  const cleanupThreshold = Math.max(10, Math.round(sampled.width * sampled.height * 0.00004));
+  const labels = sourceKind === 'raster'
+    ? mergeSmallLabelFragments(
+        cleanPaletteLabels(rawLabels, sampled.width, sampled.height),
+        sampled.width,
+        sampled.height,
+        cleanupThreshold
+      )
+    : rawLabels;
+  const minimumArea = sourceKind === 'raster' ? 3 : cleanupThreshold;
   const vectorComponents = sourceKind === 'vector'
     ? extractSvgComponents(sourceUrl, sampled.pixels, sampled.width, sampled.height, minimumArea)
     : null;
@@ -1012,14 +1114,19 @@ export const generateStitchPlan = (
 
   for (const work of works) {
     if (work.region.stitchType === 'running') createRunningSequences(work, stitchLengthPixels);
-    else if (work.region.stitchType === 'satin') createSatinSequences(work, stitchLengthPixels);
+    else if (work.region.stitchType === 'satin') createSatinSequences(work, rowSpacingPixels, stitchLengthPixels);
     else {
       const shapeDirection = (work.region.directionDegrees * Math.PI) / 180;
       const fallbackDirection = (settings.stitchAngle * Math.PI) / 180;
       const aspect = Math.max(work.region.bounds.width, work.region.bounds.height) / Math.max(1, Math.min(work.region.bounds.width, work.region.bounds.height));
       createTatamiSequences(work, aspect > 1.2 ? shapeDirection : fallbackDirection, rowSpacingPixels, stitchLengthPixels);
     }
-    addBorderSequence(work, settings.borderType, stitchLengthPixels);
+    // A global border around every color fragment creates a tangled wireframe
+    // on detailed raster art. Preserve per-object borders for clean/vector art,
+    // but suppress them for highly segmented raster artwork.
+    if (sourceKind === 'vector' || works.length <= 24) {
+      addBorderSequence(work, settings.borderType, stitchLengthPixels);
+    }
   }
 
   const commands = buildCommandSequence(works);

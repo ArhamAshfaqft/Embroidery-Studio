@@ -183,6 +183,13 @@ export const renderStitchPlan = (
       cursor = point;
       continue;
     }
+    // Underlay is part of the generated machine path but sits beneath the top
+    // stitches in a finished sew-out. Exposing it in the beauty preview creates
+    // false wires and tangles, especially in complex raster artwork.
+    if (command.underlay) {
+      cursor = point;
+      continue;
+    }
     if (settings.renderStyle === 'natural') {
       drawNaturalSegment(context, cursor, point, command, settings, outputScale, segmentIndex);
     } else {
@@ -209,4 +216,3 @@ export const renderStitchPlan = (
   finalContext.drawImage(threadCanvas, 0, 0);
   return finalCanvas;
 };
-
