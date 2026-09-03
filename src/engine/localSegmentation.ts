@@ -1,4 +1,5 @@
 import type * as Ort from 'onnxruntime-web';
+import { createRenderCanvas, RenderSource, sourceDimensions } from './renderCanvas';
 
 export interface LocalSegmentationObject {
   id: number;
@@ -44,8 +45,10 @@ let decoderSessionPromise: Promise<Ort.InferenceSession> | null = null;
 const segmentationCache = new WeakMap<object, Promise<LocalSegmentationResult>>();
 const segmentationUrlCache = new Map<string, Promise<LocalSegmentationResult>>();
 
+let assetBaseUrl = typeof document !== 'undefined' ? document.baseURI : '';
+export const setSegmentationAssetBase = (url: string) => { assetBaseUrl = url; };
 const getModelUrl = (fileName: string) =>
-  new URL(`models/mobilesam/${fileName}`, document.baseURI).toString();
+  new URL(`models/mobilesam/${fileName}`, assetBaseUrl).toString();
 
 const getRuntime = async () => {
   if (!runtimePromise) {
@@ -82,17 +85,12 @@ const getSessions = async (onProgress?: SegmentationProgress) => {
   };
 };
 
-const prepareImage = (source: HTMLImageElement | HTMLCanvasElement) => {
-  const sourceWidth = source instanceof HTMLImageElement
-    ? source.naturalWidth || source.width
-    : source.width;
-  const sourceHeight = source instanceof HTMLImageElement
-    ? source.naturalHeight || source.height
-    : source.height;
+const prepareImage = (source: RenderSource) => {
+  const { width: sourceWidth, height: sourceHeight } = sourceDimensions(source);
   const scale = MODEL_DIMENSION / Math.max(sourceWidth, sourceHeight);
   const width = Math.max(32, Math.round(sourceWidth * scale));
   const height = Math.max(32, Math.round(sourceHeight * scale));
-  const canvas = document.createElement('canvas');
+  const canvas = createRenderCanvas();
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -240,7 +238,7 @@ const buildLabelMap = (
 };
 
 const runSegmentation = async (
-  source: HTMLImageElement | HTMLCanvasElement,
+  source: RenderSource,
   onProgress?: SegmentationProgress
 ): Promise<LocalSegmentationResult> => {
   onProgress?.('Preparing artwork for local AI segmentation…', 0.01);
@@ -359,11 +357,11 @@ const runSegmentation = async (
  * so changing stitch controls never repeats the expensive encoder pass.
  */
 export const segmentArtworkLocally = (
-  source: HTMLImageElement | HTMLCanvasElement,
+  source: RenderSource,
   onProgress?: SegmentationProgress
 ) => {
   const cacheKey = source as object;
-  const sourceUrl = source instanceof HTMLImageElement ? source.src : '';
+  const sourceUrl = typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement ? source.src : '';
   const cachedByUrl = sourceUrl ? segmentationUrlCache.get(sourceUrl) : undefined;
   if (cachedByUrl) {
     onProgress?.('Using cached local object map…', 1);
@@ -380,6 +378,9 @@ export const segmentArtworkLocally = (
     throw error;
   });
   segmentationCache.set(cacheKey, task);
-  if (sourceUrl) segmentationUrlCache.set(sourceUrl, task);
+  if (sourceUrl) {
+    if (segmentationUrlCache.size >= 2) segmentationUrlCache.delete(segmentationUrlCache.keys().next().value!);
+    segmentationUrlCache.set(sourceUrl, task);
+  }
   return task;
 };

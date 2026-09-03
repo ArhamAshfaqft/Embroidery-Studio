@@ -1,4 +1,5 @@
 import { EmbroiderySettings } from '../types';
+import { createRenderCanvas } from './renderCanvas';
 import { StitchCommand, StitchPlan, StitchPoint } from './stitchPlanner';
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -160,7 +161,7 @@ export const renderStitchPlan = (
   const scaleX = width / plan.analysisWidth;
   const scaleY = height / plan.analysisHeight;
   const outputScale = Math.sqrt(scaleX * scaleY);
-  const threadCanvas = document.createElement('canvas');
+  const threadCanvas = createRenderCanvas();
   threadCanvas.width = width;
   threadCanvas.height = height;
   const context = threadCanvas.getContext('2d', { alpha: true })!;
@@ -199,7 +200,7 @@ export const renderStitchPlan = (
     segmentIndex++;
   }
 
-  const finalCanvas = document.createElement('canvas');
+  const finalCanvas = createRenderCanvas();
   finalCanvas.width = width;
   finalCanvas.height = height;
   const finalContext = finalCanvas.getContext('2d', { alpha: true })!;

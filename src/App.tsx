@@ -9,6 +9,7 @@ import {
   HistoryStep
 } from './types';
 import { DEFAULT_EMBROIDERY_SETTINGS, EMBROIDERY_PRESETS } from './engine/presets';
+import { loadSourceImage } from './engine/sourceImages';
 import { MOCKUP_TEMPLATES } from './engine/mockupRenderer';
 import { SmartOptimizer, SmartAnalysisResult } from './engine/smartOptimizer';
 import { MenuBar } from './components/MenuBar';
@@ -72,10 +73,11 @@ export const App: React.FC = () => {
       setSourceImageElement(null);
       return;
     }
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => setSourceImageElement(img);
-    img.src = sourceAsset.dataUrl;
+    let cancelled = false;
+    setSourceImageElement(null);
+    void loadSourceImage(sourceAsset.dataUrl).then(img => { if (!cancelled) setSourceImageElement(img); })
+      .catch(() => { if (!cancelled) setSourceImageElement(null); });
+    return () => { cancelled = true; };
   }, [sourceAsset?.dataUrl]);
 
   // Sync Mockup Image Element
@@ -87,6 +89,10 @@ export const App: React.FC = () => {
   }, [mockupTemplate.imageUrl]);
 
   const handleFitToScreen = useCallback(() => {
+    if (activeScreen === 'mockup') {
+      setZoom(Math.min((window.innerWidth - 420) / 1200, (window.innerHeight - 180) / 1200, 1));
+      return;
+    }
     if (sourceAsset?.width && sourceAsset?.height) {
       const availableW = window.innerWidth - 420;
       const availableH = window.innerHeight - 150;
@@ -95,7 +101,11 @@ export const App: React.FC = () => {
     } else {
       setZoom(1.0);
     }
-  }, [sourceAsset?.width, sourceAsset?.height]);
+  }, [activeScreen, sourceAsset?.width, sourceAsset?.height]);
+
+  useEffect(() => {
+    if (activeScreen === 'mockup') setZoom(Math.max(.1, Math.min((window.innerWidth - 420) / 1200, (window.innerHeight - 180) / 1200, 1)));
+  }, [activeScreen]);
 
   // Trigger Smart Analysis & Optimization
   const handleTriggerSmartOptimize = useCallback(() => {

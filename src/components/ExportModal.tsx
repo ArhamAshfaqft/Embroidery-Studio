@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ExportOptions, EmbroiderySettings, MockupTemplate, MockupTransform } from '../types';
 import { ExportEngine } from '../engine/exportEngine';
+import { isRenderCancelled } from '../engine/backgroundRenderer';
+import { MAX_RENDER_PIXELS } from '../engine/renderSizing';
 import { X, Download, CheckCircle2, Loader2, Sparkles, Layers, Image as ImageIcon } from 'lucide-react';
 
 interface ExportModalProps {
@@ -35,10 +37,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportedSuccess, setExportedSuccess] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
+  const exportRevision = useRef(0);
+  const engineRef = useRef<ExportEngine | null>(null);
+  if (!engineRef.current) engineRef.current = new ExportEngine(message => setExportStatus(message));
+  useEffect(() => {
+    if (isOpen) {
+      setExportStatus(''); setExportedSuccess(false);
+      setOptions(current => ({ ...current, includeMockup: activeScreen === 'mockup',
+        resolutionMultiplier: sourceImage && sourceImage.width * sourceImage.height * 4 > MAX_RENDER_PIXELS ? 1 : current.resolutionMultiplier }));
+    }
+    return () => { ++exportRevision.current; engineRef.current?.cancel(); setIsExporting(false); };
+  }, [isOpen]);
 
   if (!isOpen || !sourceImage) return null;
 
-  const exportEngine = new ExportEngine();
+  const exportEngine = engineRef.current;
 
   const baseWidth = options.includeMockup ? (mockupImage?.naturalWidth || 1200) : sourceImage.width;
   const baseHeight = options.includeMockup ? (mockupImage?.naturalHeight || 1200) : sourceImage.height;
@@ -46,8 +60,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const targetH = baseHeight * options.resolutionMultiplier;
 
   const handleExport = async () => {
+    const revision = ++exportRevision.current;
     setIsExporting(true);
     setExportedSuccess(false);
+    setExportStatus('Preparing full-resolution export…');
 
     try {
       if (options.includeMockup && mockupImage) {
@@ -59,7 +75,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           options
         );
         const ext = options.format === 'jpeg' ? 'jpg' : options.format;
-        exportEngine.downloadFile(result.blob, `${options.fileName}-mockup.${ext}`);
+        if (revision === exportRevision.current) exportEngine.downloadFile(result.blob, `${options.fileName}-mockup.${ext}`);
       } else {
         const result = await exportEngine.exportStandaloneEmbroidery(
           sourceImage,
@@ -67,15 +83,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           options
         );
         const ext = options.format === 'jpeg' ? 'jpg' : options.format;
-        exportEngine.downloadFile(result.blob, `${options.fileName}-standalone.${ext}`);
+        if (revision === exportRevision.current) exportEngine.downloadFile(result.blob, `${options.fileName}-standalone.${ext}`);
       }
+      if (revision !== exportRevision.current) return;
       setExportedSuccess(true);
-      setTimeout(() => {
-        setIsExporting(false);
-      }, 800);
-    } catch (err) {
-      console.error('Export failed:', err);
+      setExportStatus('Export complete');
       setIsExporting(false);
+    } catch (err) {
+      if (revision === exportRevision.current) {
+        if (!isRenderCancelled(err)) setExportStatus(err instanceof Error ? err.message : 'Export failed');
+        setIsExporting(false);
+      }
     }
   };
 
@@ -102,6 +120,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Form Body */}
         <div className="p-5 space-y-4">
+          {exportStatus && <p role="status" className="text-xs text-neutral-300">{exportStatus}</p>}
+          {isExporting && <button className="text-xs text-red-300" onClick={() => {
+            ++exportRevision.current; exportEngine.cancel(); setIsExporting(false); setExportStatus('Export cancelled; original artwork unchanged.');
+          }}>Cancel export</button>}
           {/* Export Type Switcher */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
@@ -186,8 +208,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               {([1, 2, 3, 4] as const).map((scale) => (
                 <button
                   key={scale}
+                  disabled={isExporting || Math.max(baseWidth * baseHeight, sourceImage.width * sourceImage.height) * scale * scale > MAX_RENDER_PIXELS}
+                  title={sourceImage.width * sourceImage.height * scale * scale > MAX_RENDER_PIXELS ? 'Exceeds safe canvas size. Original artwork is unchanged.' : undefined}
                   onClick={() => setOptions({ ...options, resolutionMultiplier: scale })}
-                  className={`py-2 rounded-lg border text-center text-xs font-mono transition-all ${
+                  className={`py-2 rounded-lg border text-center text-xs font-mono transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                     options.resolutionMultiplier === scale
                       ? 'bg-[#27272f] border-white/20 text-white font-bold shadow-sm'
                       : 'bg-[#141418] border-white/[0.06] text-neutral-400 hover:text-neutral-200'

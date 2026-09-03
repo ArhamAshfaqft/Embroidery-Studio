@@ -1,7 +1,8 @@
 import { EmbroiderySettings, ColorMode } from '../types';
 import { findClosestThreadColor, hexToRgb, rgbToHex } from './colorPalettes';
 import { computeAdaptiveStitchField } from './stitchField';
-import { generateStitchPlan } from './stitchPlanner';
+import { generateStitchPlan, StitchPlan } from './stitchPlanner';
+import { createRenderCanvas, RenderSource } from './renderCanvas';
 import { renderStitchPlan } from './pathEmbroideryRenderer';
 import { computeObjectStitchFlow } from './objectStitchFlow';
 import {
@@ -37,8 +38,13 @@ export class EmbroideryRenderer {
   private offscreenCtx: CanvasRenderingContext2D;
 
   constructor() {
-    this.offscreenCanvas = document.createElement('canvas');
+    this.offscreenCanvas = createRenderCanvas();
     this.offscreenCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
+  }
+
+  public releaseWorkingMemory() {
+    this.offscreenCanvas.width = 1;
+    this.offscreenCanvas.height = 1;
   }
 
   /**
@@ -47,7 +53,7 @@ export class EmbroideryRenderer {
    * SVG and Surface renders remain instant and unchanged.
    */
   public async renderEmbroideryAsync(
-    sourceImage: HTMLImageElement | HTMLCanvasElement,
+    sourceImage: RenderSource,
     settings: EmbroiderySettings,
     targetScale = 1,
     onProgress?: SegmentationProgress
@@ -86,15 +92,16 @@ export class EmbroideryRenderer {
    * Main rendering pipeline: transforms any flat AI artwork into Wilcom-grade 3D physical embroidery
    */
   public renderEmbroidery(
-    sourceImage: HTMLImageElement | HTMLCanvasElement,
+    sourceImage: RenderSource,
     settings: EmbroiderySettings,
     targetScale = 1,
-    segmentation?: LocalSegmentationResult
+    segmentation?: LocalSegmentationResult,
+    sourceInfo?: { width: number; height: number; vectorPlan?: StitchPlan }
   ): RenderResult {
     const startTime = performance.now();
 
-    const srcWidth = sourceImage.width;
-    const srcHeight = sourceImage.height;
+    const srcWidth = sourceInfo?.width ?? sourceImage.width;
+    const srcHeight = sourceInfo?.height ?? sourceImage.height;
 
     const width = Math.round(srcWidth * targetScale);
     const height = Math.round(srcHeight * targetScale);
@@ -142,7 +149,7 @@ export class EmbroideryRenderer {
         typeof HTMLImageElement !== 'undefined' && sourceImage instanceof HTMLImageElement
           ? sourceImage.src
           : '';
-      const stitchPlan = generateStitchPlan(
+      const stitchPlan = sourceInfo?.vectorPlan ?? generateStitchPlan(
         srcPixels,
         width,
         height,
@@ -207,7 +214,7 @@ export class EmbroideryRenderer {
     }
 
     // 3. Pre-calculate Distance Transform and Edge Normals
-    const { distanceMap, edgeNormals, isBorderMap } = this.computeDistanceAndBorders(
+    const distanceMap = this.computeDistanceAndBorders(
       srcPixels,
       width,
       height,
@@ -222,7 +229,9 @@ export class EmbroideryRenderer {
       : null;
 
     // 4. Prepare Output Buffer
-    const outputData = ctx.createImageData(width, height);
+    // All neighbourhood analysis is complete. Shade each pixel in place:
+    // no later pixel reads an earlier pixel's colour. Saves 402 MB at 101 MP.
+    const outputData = sourceData;
     const outPixels = outputData.data;
 
     // Angle conversions
@@ -264,10 +273,25 @@ export class EmbroideryRenderer {
         const idx = (y * width + x) * 4;
         const alpha = srcPixels[idx + 3];
 
-        if (alpha < 20) continue;
+        if (alpha < 20) {
+          outPixels[idx] = outPixels[idx + 1] = outPixels[idx + 2] = outPixels[idx + 3] = 0;
+          continue;
+        }
 
-        const d = distanceMap[y * width + x];
-        const isBorder = isBorderMap[y * width + x];
+        const pixel = y * width + x;
+        const d = distanceMap[pixel];
+        const interior = x > 0 && x < width - 1 && y > 0 && y < height - 1;
+        const isBorder = interior && d > 0 && d <= Math.max(1, settings.borderThickness * targetScale);
+        // Same Sobel math, without 100 million JS references and tiny objects.
+        let edgeX = 0, edgeY = 0, hasEdgeNormal = false;
+        if (interior && d > 0 && d <= 32) {
+          const dx = (distanceMap[pixel + 1 - width] + 2 * distanceMap[pixel + 1] + distanceMap[pixel + 1 + width]) -
+            (distanceMap[pixel - 1 - width] + 2 * distanceMap[pixel - 1] + distanceMap[pixel - 1 + width]);
+          const dy = (distanceMap[pixel - 1 + width] + 2 * distanceMap[pixel + width] + distanceMap[pixel + 1 + width]) -
+            (distanceMap[pixel - 1 - width] + 2 * distanceMap[pixel - width] + distanceMap[pixel + 1 - width]);
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len > 0.05) { edgeX = dx / len; edgeY = dy / len; hasEdgeNormal = true; }
+        }
         const adaptiveX = adaptiveField
           ? Math.min(adaptiveField.width - 1, Math.floor(x * adaptiveScaleX))
           : 0;
@@ -292,28 +316,58 @@ export class EmbroideryRenderer {
           const fractionY = fieldY - y0;
           const nearestX = fractionX < 0.5 ? x0 : x1;
           const nearestY = fractionY < 0.5 ? y0 : y1;
-          objectLabel = objectFlow.labels[nearestY * objectFlow.width + nearestX];
+          const flowW = objectFlow.width;
+          objectLabel = objectFlow.labels[nearestY * flowW + nearestX];
 
           if (objectLabel > 0) {
+            const w00 = (1 - fractionX) * (1 - fractionY);
+            const w10 = fractionX * (1 - fractionY);
+            const w01 = (1 - fractionX) * fractionY;
+            const w11 = fractionX * fractionY;
+
+            const idx00 = y0 * flowW + x0;
+            const idx10 = y0 * flowW + x1;
+            const idx01 = y1 * flowW + x0;
+            const idx11 = y1 * flowW + x1;
+
             let weightSum = 0;
             let confidenceSum = 0;
-            for (let sampleY = y0; sampleY <= y1; sampleY++) {
-              const yWeight = sampleY === y0 ? 1 - fractionY : fractionY;
-              for (let sampleX = x0; sampleX <= x1; sampleX++) {
-                const xWeight = sampleX === x0 ? 1 - fractionX : fractionX;
-                const sampleWeight = xWeight * yWeight;
-                const sampleIndex = sampleY * objectFlow.width + sampleX;
-                if (objectFlow.labels[sampleIndex] !== objectLabel || sampleWeight <= 0) continue;
-                sampledObjectFlowX += objectFlow.tangentX[sampleIndex] * sampleWeight;
-                sampledObjectFlowY += objectFlow.tangentY[sampleIndex] * sampleWeight;
-                sampledRowCoordinate += objectFlow.rowCoordinate[sampleIndex] * sampleWeight;
-                sampledLongCoordinate += objectFlow.longCoordinate[sampleIndex] * sampleWeight;
-                confidenceSum += objectFlow.confidence[sampleIndex] * sampleWeight;
-                weightSum += sampleWeight;
-              }
+
+            if (objectFlow.labels[idx00] === objectLabel && w00 > 0) {
+              sampledObjectFlowX += objectFlow.tangentX[idx00] * w00;
+              sampledObjectFlowY += objectFlow.tangentY[idx00] * w00;
+              sampledRowCoordinate += objectFlow.rowCoordinate[idx00] * w00;
+              sampledLongCoordinate += objectFlow.longCoordinate[idx00] * w00;
+              confidenceSum += objectFlow.confidence[idx00] * w00;
+              weightSum += w00;
             }
+            if (objectFlow.labels[idx10] === objectLabel && w10 > 0) {
+              sampledObjectFlowX += objectFlow.tangentX[idx10] * w10;
+              sampledObjectFlowY += objectFlow.tangentY[idx10] * w10;
+              sampledRowCoordinate += objectFlow.rowCoordinate[idx10] * w10;
+              sampledLongCoordinate += objectFlow.longCoordinate[idx10] * w10;
+              confidenceSum += objectFlow.confidence[idx10] * w10;
+              weightSum += w10;
+            }
+            if (objectFlow.labels[idx01] === objectLabel && w01 > 0) {
+              sampledObjectFlowX += objectFlow.tangentX[idx01] * w01;
+              sampledObjectFlowY += objectFlow.tangentY[idx01] * w01;
+              sampledRowCoordinate += objectFlow.rowCoordinate[idx01] * w01;
+              sampledLongCoordinate += objectFlow.longCoordinate[idx01] * w01;
+              confidenceSum += objectFlow.confidence[idx01] * w01;
+              weightSum += w01;
+            }
+            if (objectFlow.labels[idx11] === objectLabel && w11 > 0) {
+              sampledObjectFlowX += objectFlow.tangentX[idx11] * w11;
+              sampledObjectFlowY += objectFlow.tangentY[idx11] * w11;
+              sampledRowCoordinate += objectFlow.rowCoordinate[idx11] * w11;
+              sampledLongCoordinate += objectFlow.longCoordinate[idx11] * w11;
+              confidenceSum += objectFlow.confidence[idx11] * w11;
+              weightSum += w11;
+            }
+
             if (weightSum > 0) {
-              const flowLength = Math.hypot(sampledObjectFlowX, sampledObjectFlowY);
+              const flowLength = Math.sqrt(sampledObjectFlowX * sampledObjectFlowX + sampledObjectFlowY * sampledObjectFlowY);
               if (flowLength > 0.001) {
                 sampledObjectFlowX /= flowLength;
                 sampledObjectFlowY /= flowLength;
@@ -383,9 +437,8 @@ export class EmbroideryRenderer {
 
         if (isBorder && settings.borderType !== 'none') {
           // --- SATIN / MERROWED BORDER CONTOUR ---
-          const edgeNormal = edgeNormals[y * width + x];
-          tangentX = edgeNormal ? edgeNormal.nx : cosAngle;
-          tangentY = edgeNormal ? edgeNormal.ny : sinAngle;
+          tangentX = hasEdgeNormal ? edgeX : cosAngle;
+          tangentY = hasEdgeNormal ? edgeY : sinAngle;
 
           const borderTangentX = -tangentY;
           const borderTangentY = tangentX;
@@ -452,13 +505,12 @@ export class EmbroideryRenderer {
             localTanY = blendedY / blendedLength;
           }
 
-          const edgeNormal = edgeNormals[y * width + x];
-          if (edgeNormal && d <= 24 * targetScale) {
+          if (hasEdgeNormal && d <= 24 * targetScale) {
             // Surface rendering follows the contour. AI Object-Aware uses the
             // inward normal instead, producing believable satin turns across
             // leaves, petals, feathers, and other segmented columns.
-            let flowX = objectLabel > 0 ? edgeNormal.nx : -edgeNormal.ny;
-            let flowY = objectLabel > 0 ? edgeNormal.ny : edgeNormal.nx;
+            let flowX = objectLabel > 0 ? edgeX : -edgeY;
+            let flowY = objectLabel > 0 ? edgeY : edgeX;
             if (flowX * localTanX + flowY * localTanY < 0) {
               flowX = -flowX;
               flowY = -flowY;
@@ -598,16 +650,14 @@ export class EmbroideryRenderer {
     }
 
     // 8. Contact Shadow Pass
-    const finalCanvas = document.createElement('canvas');
+    const finalCanvas = createRenderCanvas();
     finalCanvas.width = width;
     finalCanvas.height = height;
     const finalCtx = finalCanvas.getContext('2d', { willReadFrequently: true })!;
 
     if (settings.shadowStrength > 0) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = width;
-      tempCanvas.height = height;
-      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
+      const tempCanvas = this.offscreenCanvas;
+      const tempCtx = this.offscreenCtx;
       tempCtx.putImageData(outputData, 0, 0);
 
       const shadowDistance = (settings.shadowDistance * 0.8 + 2.0) * targetScale;
@@ -749,15 +799,9 @@ export class EmbroideryRenderer {
     width: number,
     height: number,
     borderThickness: number
-  ): {
-    distanceMap: Float32Array;
-    edgeNormals: ({ nx: number; ny: number } | null)[];
-    isBorderMap: Uint8Array;
-  } {
+  ): Float32Array {
     const total = width * height;
     const distanceMap = new Float32Array(total);
-    const edgeNormals: ({ nx: number; ny: number } | null)[] = new Array(total).fill(null);
-    const isBorderMap = new Uint8Array(total);
 
     const INF = 99999.0;
     for (let i = 0; i < total; i++) {
@@ -804,36 +848,6 @@ export class EmbroideryRenderer {
       }
     }
 
-    // Sobel gradient for edge normals, turning stitch vectors, and border classification
-    const thickness = Math.max(1.0, borderThickness);
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        const idx = y * width + x;
-        const d = distanceMap[idx];
-
-        if (d > 0) {
-          if (d <= thickness) {
-            isBorderMap[idx] = 1;
-          }
-
-          if (d <= 32) {
-            const dx =
-              (distanceMap[idx + 1 - width] + 2 * distanceMap[idx + 1] + distanceMap[idx + 1 + width]) -
-              (distanceMap[idx - 1 - width] + 2 * distanceMap[idx - 1] + distanceMap[idx - 1 + width]);
-
-            const dy =
-              (distanceMap[idx - 1 + width] + 2 * distanceMap[idx + width] + distanceMap[idx + 1 + width]) -
-              (distanceMap[idx - 1 - width] + 2 * distanceMap[idx - width] + distanceMap[idx + 1 - width]);
-
-            const len = Math.sqrt(dx * dx + dy * dy);
-            if (len > 0.05) {
-              edgeNormals[idx] = { nx: dx / len, ny: dy / len };
-            }
-          }
-        }
-      }
-    }
-
-    return { distanceMap, edgeNormals, isBorderMap };
+    return distanceMap;
   }
 }

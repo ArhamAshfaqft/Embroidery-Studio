@@ -6,7 +6,9 @@ import {
   SourceAsset,
   ToolType
 } from '../types';
-import { EmbroideryRenderer } from '../engine/embroideryRenderer';
+import { BackgroundRenderer, isRenderCancelled } from '../engine/backgroundRenderer';
+import { getMockupRenderScale } from '../engine/renderSizing';
+import { loadSourceImage } from '../engine/sourceImages';
 import { MockupRenderer } from '../engine/mockupRenderer';
 import { MockupControls } from './Inspector/MockupControls';
 import { Ruler } from './Controls/Ruler';
@@ -72,8 +74,21 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   const transformRef = useRef<MockupTransform>(transform);
   transformRef.current = transform;
 
-  const embroideryRenderer = useRef(new EmbroideryRenderer());
+  const embroideryRenderer = useRef<BackgroundRenderer | null>(null);
+  const compositionRenderer = useRef<BackgroundRenderer | null>(null);
+  if (!embroideryRenderer.current) embroideryRenderer.current = new BackgroundRenderer();
+  if (!compositionRenderer.current) compositionRenderer.current = new BackgroundRenderer();
   const mockupRenderer = useRef(new MockupRenderer());
+  const embroideryScaleRef = useRef(PREVIEW_SUPERSAMPLE);
+  const [loadedSource, setLoadedSource] = useState('');
+  const [renderStatus, setRenderStatus] = useState('Preparing artwork…');
+  const composeGenerationRef = useRef(0);
+  // Match the placed footprint, with a bounded editing raster for oversized inputs.
+  // Full-resolution export does not use this preview bound.
+  const sourceRenderScale = Math.min(
+    4096 / Math.max(sourceAsset.width, sourceAsset.height),
+    Math.ceil(getMockupRenderScale(sourceAsset.width, sourceAsset.height, transform.scale, PREVIEW_SUPERSAMPLE) * 4) / 4
+  );
 
   // Pan & Hold Space State
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -83,6 +98,9 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
 
   type InteractionMode = 'none' | 'drag' | 'resize' | 'rotate';
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('none');
+  const interactionModeRef = useRef<InteractionMode>('none');
+  interactionModeRef.current = interactionMode;
+  const cursorRafRef = useRef<number | null>(null);
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const [initialTransform, setInitialTransform] = useState<MockupTransform>(transform);
@@ -139,80 +157,113 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   useEffect(() => {
     if (!sourceAsset.dataUrl) return;
     let cancelled = false;
-
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = async () => {
-      sourceImgRef.current = img;
-      const embResult = await embroideryRenderer.current.renderEmbroideryAsync(
-        img,
-        settings,
-        PREVIEW_SUPERSAMPLE
-      );
+    sourceImgRef.current = null;
+    embroideryCanvasRef.current = null;
+    setLoadedSource('');
+    void loadSourceImage(sourceAsset.dataUrl).then(img => {
       if (cancelled) return;
-      embroideryCanvasRef.current = embResult.canvas;
-      renderCompositeMockup();
-    };
-    img.src = sourceAsset.dataUrl;
+      sourceImgRef.current = img;
+      setLoadedSource(sourceAsset.dataUrl || '');
+    }).catch(() => { if (!cancelled) setRenderStatus('Could not load artwork'); });
     return () => {
       cancelled = true;
     };
-  }, [sourceAsset.dataUrl, settings]);
+  }, [sourceAsset.dataUrl]);
 
   useEffect(() => {
+    if (!sourceImgRef.current || loadedSource !== sourceAsset.dataUrl) return;
+    let cancelled = false;
+    const source = sourceImgRef.current;
+    const timer = window.setTimeout(async () => {
+      setRenderStatus('Preparing detailed mockup artwork…');
+      try {
+        const result = await embroideryRenderer.current!.renderEmbroideryAsync(source, settings, sourceRenderScale,
+          message => { if (!cancelled) setRenderStatus(message); });
+        if (cancelled) return;
+        embroideryCanvasRef.current = result.canvas;
+        embroideryScaleRef.current = result.width / source.width;
+        renderCompositeMockup();
+      } catch (error) {
+        if (!cancelled && !isRenderCancelled(error)) setRenderStatus(error instanceof Error ? error.message : 'Render failed');
+      }
+    }, 120);
+    return () => { cancelled = true; clearTimeout(timer); embroideryRenderer.current?.cancel(); };
+  }, [loadedSource, sourceAsset.dataUrl, settings, sourceRenderScale]);
+
+  useEffect(() => {
+    let cancelled = false;
+    mockupImgRef.current = null;
+    compositionRenderer.current?.cancel();
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      if (cancelled) return;
       mockupImgRef.current = img;
       renderCompositeMockup();
     };
+    img.onerror = () => { if (!cancelled) setRenderStatus('Could not load garment'); };
     img.src = mockupTemplate.imageUrl;
+    return () => { cancelled = true; };
   }, [mockupTemplate.imageUrl]);
 
-  const renderCompositeMockup = useCallback((renderScale: number = PREVIEW_SUPERSAMPLE) => {
+  const renderCompositeMockup = useCallback(async (renderScale: number = PREVIEW_SUPERSAMPLE, skipDisplacement: boolean = false) => {
     if (!mockupImgRef.current || !embroideryCanvasRef.current || !mockupCanvasRef.current) return;
 
     const renderWidth = Math.round(MOCKUP_LAYOUT_SIZE * renderScale);
     const renderHeight = Math.round(MOCKUP_LAYOUT_SIZE * renderScale);
 
-    const composed = mockupRenderer.current.composeMockup(
-      mockupImgRef.current,
-      embroideryCanvasRef.current,
-      transformRef.current,
-      renderWidth,
-      renderHeight,
-      {
-        embroideryRenderScale: PREVIEW_SUPERSAMPLE,
+    const generation = ++composeGenerationRef.current;
+    compositionRenderer.current?.cancel();
+    try {
+      const options = {
+        embroideryRenderScale: embroideryScaleRef.current,
         layoutWidth: MOCKUP_LAYOUT_SIZE,
-        layoutHeight: MOCKUP_LAYOUT_SIZE
+        layoutHeight: MOCKUP_LAYOUT_SIZE,
+        skipDisplacement
+      };
+      // The interactive pass is only a bounded canvas blit. Full displacement
+      // is settled in a worker, never inside pointer events or slider handlers.
+      const composed = skipDisplacement
+        ? mockupRenderer.current.composeMockup(mockupImgRef.current, embroideryCanvasRef.current,
+            transformRef.current, renderWidth, renderHeight, options)
+        : (await compositionRenderer.current!.compose(mockupImgRef.current, embroideryCanvasRef.current,
+            transformRef.current, renderWidth, renderHeight, options)).canvas;
+      if (generation !== composeGenerationRef.current || !mockupCanvasRef.current) return;
+
+      const canvas = mockupCanvasRef.current;
+      if (canvas.width !== renderWidth || canvas.height !== renderHeight) {
+        canvas.width = renderWidth;
+        canvas.height = renderHeight;
       }
-    );
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    const canvas = mockupCanvasRef.current;
-    canvas.width = renderWidth;
-    canvas.height = renderHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.clearRect(0, 0, renderWidth, renderHeight);
-    ctx.drawImage(composed, 0, 0, renderWidth, renderHeight);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.clearRect(0, 0, renderWidth, renderHeight);
+      ctx.drawImage(composed, 0, 0, renderWidth, renderHeight);
+      setRenderStatus(skipDisplacement ? 'Editing • full detail after release' : 'Full-detail mockup');
+    } catch (error) {
+      if (generation === composeGenerationRef.current && !isRenderCancelled(error)) setRenderStatus(error instanceof Error ? error.message : 'Mockup failed');
+    }
   }, []);
 
   useEffect(() => {
-    // Keep placement controls responsive with a 1x working frame, then replace
-    // it with a full 2x supersampled composite as soon as interaction settles.
-    renderCompositeMockup(1);
+    // When actively dragging, rotating, or scaling the gizmo, skip heavy displacement
+    // to keep placement responsive. As soon as interaction settles, compute the
+    // full 2x supersampled displacement composite.
+    const frame = requestAnimationFrame(() => renderCompositeMockup(1, true));
+
     if (settledRenderTimerRef.current !== null) {
       window.clearTimeout(settledRenderTimerRef.current);
     }
     settledRenderTimerRef.current = window.setTimeout(() => {
-      renderCompositeMockup(PREVIEW_SUPERSAMPLE);
+      renderCompositeMockup(PREVIEW_SUPERSAMPLE, false);
       settledRenderTimerRef.current = null;
     }, HIGH_QUALITY_SETTLE_MS);
 
     return () => {
+      cancelAnimationFrame(frame);
       if (settledRenderTimerRef.current !== null) {
         window.clearTimeout(settledRenderTimerRef.current);
         settledRenderTimerRef.current = null;
@@ -220,20 +271,28 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     };
   }, [transform, renderCompositeMockup]);
 
+  useEffect(() => () => {
+    ++composeGenerationRef.current;
+    embroideryRenderer.current?.dispose();
+    compositionRenderer.current?.dispose();
+  }, []);
+
   const posX = (transform.x / 100) * MOCKUP_LAYOUT_SIZE;
   const posY = (transform.y / 100) * MOCKUP_LAYOUT_SIZE;
-  const embBaseW = embroideryCanvasRef.current ? embroideryCanvasRef.current.width : 500;
-  const embBaseH = embroideryCanvasRef.current ? embroideryCanvasRef.current.height : 500;
-  const boxW = (embBaseW / PREVIEW_SUPERSAMPLE) * transform.scale;
-  const boxH = (embBaseH / PREVIEW_SUPERSAMPLE) * transform.scale;
+  const boxW = sourceAsset.width * transform.scale;
+  const boxH = sourceAsset.height * transform.scale;
 
   // Wheel Zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newZoom = Math.max(0.1, Math.min(4.0, zoom * zoomFactor));
-    onZoomChange(parseFloat(newZoom.toFixed(3)));
-  };
+  useEffect(() => {
+    const viewport = containerRef.current;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const newZoom = Math.max(0.1, Math.min(4, zoom * (e.deltaY < 0 ? 1.15 : 0.85)));
+      onZoomChange(parseFloat(newZoom.toFixed(3)));
+    };
+    viewport?.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport?.removeEventListener('wheel', handleWheel);
+  }, [zoom, onZoomChange]);
 
   const handleContainerMouseDown = (e: React.MouseEvent) => {
     if (isSpaceHeld || e.button === 1) {
@@ -254,9 +313,16 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setCursorCoord({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      if (showRulers && !isPreviewMode && containerRef.current) {
+        if (cursorRafRef.current === null) {
+          cursorRafRef.current = requestAnimationFrame(() => {
+            if (containerRef.current) {
+              const rect = containerRef.current.getBoundingClientRect();
+              setCursorCoord({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+            }
+            cursorRafRef.current = null;
+          });
+        }
       }
 
       if (isPanning) {
@@ -305,6 +371,16 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
       setIsPanning(false);
       setInteractionMode('none');
       setActiveHandle(null);
+      if (interactionMode === 'none') return;
+
+      // Immediately trigger high-quality displacement composite
+      if (settledRenderTimerRef.current !== null) {
+        window.clearTimeout(settledRenderTimerRef.current);
+      }
+      settledRenderTimerRef.current = window.setTimeout(() => {
+        renderCompositeMockup(PREVIEW_SUPERSAMPLE, false);
+        settledRenderTimerRef.current = null;
+      }, 50);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -313,6 +389,10 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (cursorRafRef.current !== null) {
+        cancelAnimationFrame(cursorRafRef.current);
+        cursorRafRef.current = null;
+      }
     };
   }, [isPanning, panStart, interactionMode, dragStartPos, initialTransform, zoom, transform, onUpdateTransform]);
 
@@ -354,15 +434,14 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
 
           <div
             ref={containerRef}
-            onWheel={handleWheel}
             onMouseDown={handleContainerMouseDown}
             className={`flex-1 relative overflow-hidden flex items-center justify-center select-none bg-[#09090c] canvas-grid ${containerCursor}`}
           >
             {/* Canvas & Gizmo Wrapper */}
             <div
-              className="relative transition-transform duration-75 shadow-2xl flex items-center justify-center pointer-events-none"
+              className="relative shadow-2xl flex items-center justify-center pointer-events-none will-change-transform"
               style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom * 0.65})`,
+                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom * 0.65})`,
                 transformOrigin: 'center center'
               }}
             >
@@ -510,6 +589,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
                 <span>Position: ({Math.round(transform.x)}%, {Math.round(transform.y)}%)</span>
                 <span className="text-neutral-700">•</span>
                 <span>Scale: {Math.round(transform.scale * 100)}%</span>
+                <span role="status">{renderStatus}</span>
                 <span className="text-neutral-700">•</span>
                 <span className="text-neutral-400">(Hold Space to Pan)</span>
               </div>

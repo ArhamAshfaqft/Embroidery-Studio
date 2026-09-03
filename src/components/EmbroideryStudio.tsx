@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { EmbroiderySettings, SourceAsset, ToolType, HistoryStep } from '../types';
-import { EmbroideryRenderer } from '../engine/embroideryRenderer';
+import { BackgroundRenderer, isRenderCancelled } from '../engine/backgroundRenderer';
+import { getPreviewScale, MAX_RENDER_PIXELS } from '../engine/renderSizing';
+import { loadSourceImage } from '../engine/sourceImages';
 import { DockPanel } from './Inspector/DockPanel';
 import { Ruler } from './Controls/Ruler';
 import {
@@ -67,8 +69,15 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const cachedEmbroideryCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rendererRef = useRef<EmbroideryRenderer>(new EmbroideryRenderer());
+  const rendererRef = useRef<BackgroundRenderer | null>(null);
+  if (!rendererRef.current) rendererRef.current = new BackgroundRenderer();
   const renderGenerationRef = useRef(0);
+  const cursorRafRef = useRef<number | null>(null);
+  const [loadedSource, setLoadedSource] = useState('');
+  const zoomChangeRef = useRef(onZoomChange);
+  zoomChangeRef.current = onZoomChange;
+  const previewScale = getPreviewScale(sourceAsset.width, sourceAsset.height, zoom, window.devicePixelRatio || 1);
+  const nativeResultRef = useRef<{ source: HTMLImageElement; settings: EmbroiderySettings } | null>(null);
 
   const [renderStats, setRenderStats] = useState<{
     timeMs: number;
@@ -147,13 +156,20 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
 
     const embCanvas = cachedEmbroideryCanvasRef.current;
     const targetCanvas = canvasRef.current;
-    if (targetCanvas.width !== embCanvas.width || targetCanvas.height !== embCanvas.height) {
-      targetCanvas.width = embCanvas.width;
-      targetCanvas.height = embCanvas.height;
+    // Explicit high-quality reduction avoids moire from CSS shrinking a 10K
+    // texture. The native cached render remains available when zoom increases.
+    const density = Math.min(1, zoom * (window.devicePixelRatio || 1));
+    const width = Math.max(1, Math.min(embCanvas.width, Math.ceil(sourceAsset.width * density)));
+    const height = Math.max(1, Math.min(embCanvas.height, Math.ceil(sourceAsset.height * density)));
+    if (targetCanvas.width !== width || targetCanvas.height !== height) {
+      targetCanvas.width = width;
+      targetCanvas.height = height;
     }
 
     const ctx = targetCanvas.getContext('2d');
     if (!ctx) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
 
@@ -173,7 +189,7 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
       ctx.beginPath();
       ctx.rect(splitX, 0, targetCanvas.width - splitX, targetCanvas.height);
       ctx.clip();
-      ctx.drawImage(embCanvas, 0, 0);
+      ctx.drawImage(embCanvas, 0, 0, width, height);
       ctx.restore();
 
       // High-contrast Divider Line
@@ -184,54 +200,23 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
       ctx.lineTo(splitX, targetCanvas.height);
       ctx.stroke();
     } else {
-      ctx.drawImage(embCanvas, 0, 0);
+      ctx.drawImage(embCanvas, 0, 0, width, height);
     }
-  }, [showComparison, splitPos, isPreviewMode]);
+  }, [showComparison, splitPos, isPreviewMode, zoom, sourceAsset.width, sourceAsset.height]);
 
-  // Compute 3D Simulation ONLY when settings change
-  const recomputeEmbroideryEffect = useCallback(() => {
-    if (!sourceImgRef.current) return;
-    const renderGeneration = ++renderGenerationRef.current;
-    setIsRendering(true);
-    setRenderStats((current) => ({
-      ...current,
-      status: settings.stitchPlanningMode === 'object-aware'
-        ? 'Starting local AI segmentation…'
-        : 'Rendering…'
-    }));
-
-    requestAnimationFrame(async () => {
-      if (!sourceImgRef.current) return;
-      const result = await rendererRef.current.renderEmbroideryAsync(
-        sourceImgRef.current,
-        settings,
-        1,
-        (message) => {
-          if (renderGeneration !== renderGenerationRef.current) return;
-          setRenderStats((current) => ({ ...current, status: message }));
-        }
-      );
-      if (renderGeneration !== renderGenerationRef.current) return;
-      cachedEmbroideryCanvasRef.current = result.canvas;
-
-      setRenderStats({
-        timeMs: Math.round(result.renderTimeMs),
-        width: result.width,
-        height: result.height,
-        status: result.statusMessage || 'Ready'
-      });
-      setIsRendering(false);
-      drawCompositeFrame();
-    });
-  }, [settings, drawCompositeFrame]);
+  const drawFrameRef = useRef(drawCompositeFrame);
+  drawFrameRef.current = drawCompositeFrame;
 
   // Load Source Image & Auto-Fit
   useEffect(() => {
     if (!sourceAsset.dataUrl) return;
-
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    let cancelled = false;
+    sourceImgRef.current = null;
+    cachedEmbroideryCanvasRef.current = null;
+    nativeResultRef.current = null;
+    setLoadedSource('');
+    void loadSourceImage(sourceAsset.dataUrl).then(img => {
+      if (cancelled) return;
       sourceImgRef.current = img;
 
       if (containerRef.current) {
@@ -242,30 +227,89 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
 
         if (imgW > availableW || imgH > availableH) {
           const fitRatio = Math.min(availableW / imgW, availableH / imgH, 1.0);
-          onZoomChange(parseFloat(fitRatio.toFixed(2)));
+          zoomChangeRef.current(Math.max(0.05, parseFloat(fitRatio.toFixed(3))));
         }
       }
 
-      recomputeEmbroideryEffect();
+      setLoadedSource(sourceAsset.dataUrl || '');
+    }).catch(() => {
+      if (!cancelled) { setIsRendering(false); setRenderStats(current => ({ ...current, status: 'Could not load artwork' })); }
+    });
+    return () => { cancelled = true; };
+  }, [sourceAsset.dataUrl]);
+
+  useEffect(() => {
+    if (!sourceImgRef.current || loadedSource !== sourceAsset.dataUrl) return;
+    const generation = ++renderGenerationRef.current;
+    const source = sourceImgRef.current;
+    if (nativeResultRef.current?.source === source && nativeResultRef.current.settings === settings) {
+      setIsRendering(false);
+      drawFrameRef.current();
+      return;
+    }
+    nativeResultRef.current = null;
+    setIsRendering(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await rendererRef.current!.renderEmbroideryAsync(source, settings, previewScale, message => {
+          if (generation === renderGenerationRef.current) setRenderStats(current => ({ ...current, status: message }));
+        });
+        if (generation !== renderGenerationRef.current) return;
+        cachedEmbroideryCanvasRef.current = result.canvas;
+        setRenderStats({ timeMs: Math.round(result.renderTimeMs), width: source.width, height: source.height,
+          status: `${result.statusMessage || 'Ready'}${previewScale < 1 ? ` • Preview ${result.width}×${result.height}` : ''}` });
+        drawFrameRef.current();
+        if (previewScale < 1 && source.width * source.height <= MAX_RENDER_PIXELS) {
+          // A fast editing preview is temporary. Finish the original native
+          // shader in the background so no detail is permanently substituted.
+          await new Promise(resolve => setTimeout(resolve, 450));
+          if (generation !== renderGenerationRef.current) return;
+          const full = await rendererRef.current!.renderEmbroideryAsync(source, settings, 1, () => {
+            if (generation === renderGenerationRef.current) setRenderStats(current => ({ ...current, status: 'Refining original detail in background…' }));
+          });
+          if (generation !== renderGenerationRef.current) return;
+          cachedEmbroideryCanvasRef.current = full.canvas;
+          setRenderStats({ timeMs: Math.round(full.renderTimeMs), width: source.width, height: source.height,
+            status: `${full.statusMessage || 'Ready'} • Native detail` });
+          drawFrameRef.current();
+        }
+        if (previewScale === 1 || source.width * source.height <= MAX_RENDER_PIXELS) nativeResultRef.current = { source, settings };
+      } catch (error) {
+        if (generation === renderGenerationRef.current && !isRenderCancelled(error)) {
+          setRenderStats(current => ({ ...current, status: error instanceof Error ? error.message : 'Render failed' }));
+        }
+      } finally {
+        if (generation === renderGenerationRef.current) setIsRendering(false);
+      }
+    }, 120);
+    return () => {
+      ++renderGenerationRef.current;
+      window.clearTimeout(timer);
+      rendererRef.current?.cancel();
     };
-    img.src = sourceAsset.dataUrl;
-  }, [sourceAsset.dataUrl, recomputeEmbroideryEffect, onZoomChange]);
+  }, [loadedSource, sourceAsset.dataUrl, settings, previewScale]);
+
+  useEffect(() => () => {
+    rendererRef.current?.dispose();
+    if (cursorRafRef.current !== null) cancelAnimationFrame(cursorRafRef.current);
+  }, []);
 
   useEffect(() => {
-    recomputeEmbroideryEffect();
-  }, [settings, recomputeEmbroideryEffect]);
-
-  useEffect(() => {
-    drawCompositeFrame();
+    const frame = requestAnimationFrame(drawCompositeFrame);
+    return () => cancelAnimationFrame(frame);
   }, [splitPos, showComparison, isPreviewMode, drawCompositeFrame]);
 
   // Smooth Mouse Wheel Zooming
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newZoom = Math.max(0.05, Math.min(5.0, zoom * zoomFactor));
-    onZoomChange(parseFloat(newZoom.toFixed(3)));
-  };
+  useEffect(() => {
+    const viewport = containerRef.current;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const newZoom = Math.max(0.05, Math.min(5, zoom * (e.deltaY < 0 ? 1.15 : 0.85)));
+      zoomChangeRef.current(parseFloat(newZoom.toFixed(3)));
+    };
+    viewport?.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport?.removeEventListener('wheel', handleWheel);
+  }, [zoom]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isSpaceHeld || activeTool === 'hand' || e.button === 1) {
@@ -282,9 +326,16 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setCursorCoord({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (showRulers && !isPreviewMode && containerRef.current) {
+      if (cursorRafRef.current === null) {
+        cursorRafRef.current = requestAnimationFrame(() => {
+          if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            setCursorCoord({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          }
+          cursorRafRef.current = null;
+        });
+      }
     }
 
     if (isPanning) {
@@ -355,7 +406,6 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
           {/* Viewport Canvas Area */}
           <div
             ref={containerRef}
-            onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -370,16 +420,16 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
           >
             {/* Canvas Render Container */}
             <div
-              className="relative transition-transform duration-75 shadow-2xl flex items-center justify-center pointer-events-none"
+              className="relative shadow-2xl flex items-center justify-center pointer-events-none will-change-transform"
               style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: 'center center'
               }}
             >
               <canvas
                 ref={canvasRef}
                 className="max-w-none rounded-lg shadow-2xl"
-                style={{ imageRendering: 'auto' }}
+                style={{ imageRendering: 'auto', width: sourceAsset.width, height: sourceAsset.height }}
               />
 
               {/* Split Slider Handle */}

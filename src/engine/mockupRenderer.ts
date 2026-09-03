@@ -1,4 +1,5 @@
 import { MockupTemplate, MockupTransform } from '../types';
+import { createRenderCanvas, RenderSource } from './renderCanvas';
 import {
   REAL_TSHIRT_DATA_URL,
   REAL_HOODIE_DATA_URL,
@@ -71,6 +72,8 @@ export interface MockupCompositionOptions {
   /** Logical mockup dimensions before preview/export supersampling. */
   layoutWidth?: number;
   layoutHeight?: number;
+  /** Skip heavy displacement mapping during the interactive placement pass. */
+  skipDisplacement?: boolean;
 }
 
 export class MockupRenderer {
@@ -79,14 +82,14 @@ export class MockupRenderer {
    * Features real fabric wrinkle displacement mapping and garment lighting interaction.
    */
   public composeMockup(
-    mockupImg: HTMLImageElement,
-    embroideryCanvas: HTMLCanvasElement,
+    mockupImg: RenderSource,
+    embroideryCanvas: RenderSource,
     transform: MockupTransform,
     targetWidth: number = 1200,
     targetHeight: number = 1200,
     options: MockupCompositionOptions = {}
   ): HTMLCanvasElement {
-    const outputCanvas = document.createElement('canvas');
+    const outputCanvas = createRenderCanvas();
     outputCanvas.width = targetWidth;
     outputCanvas.height = targetHeight;
     const ctx = outputCanvas.getContext('2d', { willReadFrequently: true });
@@ -117,9 +120,24 @@ export class MockupRenderer {
     if (embW <= 0 || embH <= 0) return outputCanvas;
 
     // 3. Process Fabric Wrinkle Displacement & Lighting Interaction
-    let finalEmbroiderySource: HTMLCanvasElement | HTMLImageElement = embroideryCanvas;
+    let finalEmbroiderySource: RenderSource = embroideryCanvas;
+    let drawX = -embW / 2, drawY = -embH / 2, drawW = embW, drawH = embH;
 
-    if (transform.displacementStrength > 0 && embW > 10 && embH > 10) {
+    if (!options.skipDisplacement && transform.displacementStrength > 0 && embW > 10 && embH > 10) {
+      // Crop the displacement working buffers to the visible rotated footprint,
+      // including a generous shadow/filter halo. Off-canvas pixels cannot improve
+      // the output, but an oversized artwork used to allocate gigabytes for them.
+      const c = Math.cos(rotRad), s = Math.sin(rotRad);
+      const corners = [[0, 0], [targetWidth, 0], [0, targetHeight], [targetWidth, targetHeight]]
+        .map(([x, y]) => ({ x: (x - posX) * c + (y - posY) * s + embW / 2,
+          y: -(x - posX) * s + (y - posY) * c + embH / 2 }));
+      const halo = Math.ceil(((8 * scale + transform.shadowIntensity * 1.6) * 3 +
+        (4 * scale + transform.shadowIntensity * 1.2) + transform.displacementStrength * 0.45) * outputScale + 8);
+      const left = Math.max(0, Math.floor(Math.min(...corners.map(p => p.x))) - halo);
+      const top = Math.max(0, Math.floor(Math.min(...corners.map(p => p.y))) - halo);
+      const right = Math.min(embW, Math.ceil(Math.max(...corners.map(p => p.x))) + halo);
+      const bottom = Math.min(embH, Math.ceil(Math.max(...corners.map(p => p.y))) + halo);
+      if (right <= left || bottom <= top) return outputCanvas;
       finalEmbroiderySource = this.applyFabricDisplacement(
         ctx,
         embroideryCanvas,
@@ -128,8 +146,10 @@ export class MockupRenderer {
         embW,
         embH,
         transform.displacementStrength,
-        outputScale
+        outputScale,
+        { x: left, y: top, width: right - left, height: bottom - top }
       );
+      drawX += left; drawY += top; drawW = right - left; drawH = bottom - top;
     }
 
     ctx.save();
@@ -146,14 +166,14 @@ export class MockupRenderer {
       ctx.globalAlpha = transform.opacity;
 
       // Draw shadow silhouette
-      ctx.drawImage(finalEmbroiderySource, -embW / 2, -embH / 2, embW, embH);
+      ctx.drawImage(finalEmbroiderySource, drawX, drawY, drawW, drawH);
       ctx.restore();
     }
 
     // 5. Draw Embroidery Graphic with selected Blend Mode & Opacity
     ctx.globalAlpha = transform.opacity;
     ctx.globalCompositeOperation = transform.blendMode === 'normal' ? 'source-over' : (transform.blendMode as GlobalCompositeOperation);
-    ctx.drawImage(finalEmbroiderySource, -embW / 2, -embH / 2, embW, embH);
+    ctx.drawImage(finalEmbroiderySource, drawX, drawY, drawW, drawH);
 
     ctx.restore();
 
@@ -165,37 +185,40 @@ export class MockupRenderer {
    */
   private applyFabricDisplacement(
     garmentCtx: CanvasRenderingContext2D,
-    embroideryCanvas: HTMLCanvasElement,
+    embroideryCanvas: RenderSource,
     posX: number,
     posY: number,
     embW: number,
     embH: number,
     strength: number,
-    outputScale: number
-  ): HTMLCanvasElement {
-    const displacedCanvas = document.createElement('canvas');
+    outputScale: number,
+    crop: { x: number; y: number; width: number; height: number }
+  ): RenderSource {
+    const originalWidth = embW, originalHeight = embH;
+    embW = crop.width; embH = crop.height;
+    const displacedCanvas = createRenderCanvas();
     displacedCanvas.width = embW;
     displacedCanvas.height = embH;
     const dispCtx = displacedCanvas.getContext('2d', { willReadFrequently: true });
-    if (!dispCtx) return embroideryCanvas;
+    if (!dispCtx) throw new Error('Could not create displacement canvas');
 
     // Resample embroidery to the final placed pixel density. High-quality
     // interpolation keeps individual thread ridges intact in supersampled views.
     dispCtx.imageSmoothingEnabled = true;
     dispCtx.imageSmoothingQuality = 'high';
-    dispCtx.drawImage(embroideryCanvas, 0, 0, embW, embH);
+    dispCtx.drawImage(embroideryCanvas, -crop.x, -crop.y, originalWidth, originalHeight);
     const embData = dispCtx.getImageData(0, 0, embW, embH);
     const embPixels = embData.data;
 
     // Sample garment backdrop under patch
-    const sampleX = Math.max(0, Math.min(garmentCtx.canvas.width - embW, Math.round(posX - embW / 2)));
-    const sampleY = Math.max(0, Math.min(garmentCtx.canvas.height - embH, Math.round(posY - embH / 2)));
+    const sampleX = Math.max(0, Math.min(garmentCtx.canvas.width - originalWidth, Math.round(posX - originalWidth / 2))) + crop.x;
+    const sampleY = Math.max(0, Math.min(garmentCtx.canvas.height - originalHeight, Math.round(posY - originalHeight / 2))) + crop.y;
 
     let garmentData: ImageData;
     try {
       garmentData = garmentCtx.getImageData(sampleX, sampleY, embW, embH);
     } catch {
-      return embroideryCanvas;
+      return displacedCanvas;
     }
 
     const gPixels = garmentData.data;

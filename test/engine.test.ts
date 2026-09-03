@@ -7,6 +7,7 @@ import { computeAdaptiveStitchField } from '../src/engine/stitchField';
 import { generateStitchPlan } from '../src/engine/stitchPlanner';
 import type { LocalSegmentationResult } from '../src/engine/localSegmentation';
 import { computeObjectStitchFlow } from '../src/engine/objectStitchFlow';
+import { getPreviewScale, assertRenderSize, getMockupRenderScale } from '../src/engine/renderSizing';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -216,5 +217,16 @@ assert(
     Math.abs(curvedFlow.rowCoordinate[circleRight] - curvedFlow.rowCoordinate[circleRight - 1]) < 3,
   'Curved stitch directions are integrated into continuous procedural row phases'
 );
+
+console.log('\n10. Testing Render Size and Pixel Density Policies...');
+assertRenderSize(9712, 10360);
+assert(getPreviewScale(9712, 10360, .09) === .25, '101 MP fit preview uses a screen-density tier');
+assert(getPreviewScale(9712, 10360, 1) === 1, '100% zoom requests native source detail');
+assert(getPreviewScale(1230, 1278, .5) === 1, 'normal artwork retains full native preview');
+assert(getPreviewScale(9712, 10360, .10) === getPreviewScale(9712, 10360, .11), 'small wheel changes reuse the same preview tier');
+assert(getMockupRenderScale(9712, 10360, .1, 2) < 1, 'mockup source resolution follows its placed pixel footprint');
+let oversizedRejected = false;
+try { assertRenderSize(19424, 20720); } catch { oversizedRejected = true; }
+assert(oversizedRejected, 'unsafe 402 MP allocations are rejected before rendering');
 
 console.log('\n--- ALL ENGINE TESTS PASSED SUCCESSFULLY! ---');

@@ -1,5 +1,6 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { SourceAsset, TextConfig } from '../types';
+import { loadSourceImage, retainUploadedImage } from '../engine/sourceImages';
 import { TextEditor } from './TextEditor';
 import { renderTextToCanvas, DEFAULT_TEXT_CONFIG } from '../engine/textRenderer';
 import { removePlainBackground, hasSolidBackgroundBorders } from '../engine/imageUtils';
@@ -44,6 +45,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [isRemovingBg, setIsRemovingBg] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadRevision = useRef(0);
   const [dragOver, setDragOver] = useState(false);
 
   // Compute live vector text asset on the fly
@@ -86,6 +88,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   }, [uploadedGraphic?.dataUrl]);
 
   const handleFileUpload = async (file: File) => {
+    const revision = ++uploadRevision.current;
     if (!file.type.match(/image\/(png|jpeg|jpg|webp|svg\+xml)/i)) {
       alert('Please upload a valid image file (PNG, JPG, JPEG, WebP, or SVG).');
       return;
@@ -132,25 +135,21 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const newAsset: SourceAsset = {
-          id: `upload_${Date.now()}`,
-          type: 'image',
-          name: file.name.replace(/\.[^/.]+$/, ''),
-          dataUrl,
-          width: img.naturalWidth || img.width,
-          height: img.naturalHeight || img.height
-        };
-        setUploadedGraphic(newAsset);
-        setActiveTab('upload');
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+    // A 180 MB PNG otherwise becomes a 240 MB base64 string in React state.
+    // Blob URLs retain the exact original file without that extra copy.
+    const dataUrl = URL.createObjectURL(file);
+    try {
+      const img = await loadSourceImage(dataUrl);
+      if (revision !== uploadRevision.current) { URL.revokeObjectURL(dataUrl); return; }
+      retainUploadedImage(dataUrl);
+      setUploadedGraphic({ id: `upload_${Date.now()}`, type: 'image',
+        name: file.name.replace(/\.[^/.]+$/, ''), dataUrl,
+        width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+      setActiveTab('upload');
+    } catch {
+      URL.revokeObjectURL(dataUrl);
+      alert('This image could not be decoded. Please try another image.');
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {

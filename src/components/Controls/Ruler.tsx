@@ -18,7 +18,9 @@ export const Ruler: React.FC<RulerProps> = ({
   const isHorizontal = orientation === 'horizontal';
 
   // Major tick step in pixels
-  const step = zoom >= 1.5 ? 50 : zoom <= 0.5 ? 200 : 100;
+  const desired = 80 / Math.max(0.001, zoom);
+  const magnitude = 10 ** Math.floor(Math.log10(desired));
+  const step = ([1, 2, 5, 10].find(n => n * magnitude >= desired) ?? 10) * magnitude;
   const ticks = [];
 
   const startVal = Math.floor(-offset / (step * zoom)) * step;

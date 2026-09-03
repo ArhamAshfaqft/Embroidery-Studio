@@ -1,6 +1,6 @@
 import { ExportOptions, EmbroiderySettings, MockupTransform } from '../types';
-import { EmbroideryRenderer } from './embroideryRenderer';
-import { MockupRenderer } from './mockupRenderer';
+import { BackgroundRenderer } from './backgroundRenderer';
+import type { SegmentationProgress } from './localSegmentation';
 
 function getMimeType(format: string): string {
   if (format === 'jpeg' || format === 'jpg') return 'image/jpeg';
@@ -9,103 +9,36 @@ function getMimeType(format: string): string {
 }
 
 export class ExportEngine {
-  private embroideryRenderer: EmbroideryRenderer;
-  private mockupRenderer: MockupRenderer;
+  private renderer = new BackgroundRenderer();
+  constructor(private onProgress?: SegmentationProgress) {}
+  cancel() { this.renderer.dispose(); }
 
-  constructor() {
-    this.embroideryRenderer = new EmbroideryRenderer();
-    this.mockupRenderer = new MockupRenderer();
-  }
-
-  /**
-   * Export standalone transparent embroidery graphic at target scale
-   */
   public async exportStandaloneEmbroidery(
     sourceImg: HTMLImageElement | HTMLCanvasElement,
     settings: EmbroiderySettings,
     options: ExportOptions
-  ): Promise<{ blob: Blob; dataUrl: string; width: number; height: number }> {
-    const scale = options.resolutionMultiplier || 1;
-    const renderResult = await this.embroideryRenderer.renderEmbroideryAsync(sourceImg, settings, scale);
-
-    return new Promise((resolve, reject) => {
-      const mimeType = getMimeType(options.format);
-      renderResult.canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Failed to generate image blob'));
-            return;
-          }
-          const dataUrl = renderResult.canvas.toDataURL(mimeType, options.quality);
-          resolve({
-            blob,
-            dataUrl,
-            width: renderResult.width,
-            height: renderResult.height
-          });
-        },
-        mimeType,
-        options.quality
-      );
-    });
+  ) {
+    // Export always uses the original artwork, never a preview raster.
+    return this.renderer.export(sourceImg, settings, options.resolutionMultiplier || 1,
+      getMimeType(options.format), options.quality, undefined, this.onProgress);
   }
 
-  /**
-   * Export finished apparel mockup with embroidery composite
-   */
   public async exportFinishedMockup(
     mockupImg: HTMLImageElement,
     sourceImg: HTMLImageElement | HTMLCanvasElement,
     settings: EmbroiderySettings,
     transform: MockupTransform,
     options: ExportOptions
-  ): Promise<{ blob: Blob; dataUrl: string; width: number; height: number }> {
+  ) {
     const scale = options.resolutionMultiplier || 1;
-    const targetWidth = mockupImg.naturalWidth ? mockupImg.naturalWidth * scale : 1200 * scale;
-    const targetHeight = mockupImg.naturalHeight ? mockupImg.naturalHeight * scale : 1200 * scale;
-
-    // Render high-res embroidery
-    const embResult = await this.embroideryRenderer.renderEmbroideryAsync(sourceImg, settings, scale);
-
-    // Compose onto mockup canvas with fabric wrinkle displacement
-    const composedCanvas = this.mockupRenderer.composeMockup(
-      mockupImg,
-      embResult.canvas,
-      transform,
-      targetWidth,
-      targetHeight,
-      {
-        embroideryRenderScale: scale,
-        layoutWidth: mockupImg.naturalWidth || 1200,
-        layoutHeight: mockupImg.naturalHeight || 1200
-      }
-    );
-
-    return new Promise((resolve, reject) => {
-      const mimeType = getMimeType(options.format);
-      composedCanvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Failed to generate mockup image blob'));
-            return;
-          }
-          const dataUrl = composedCanvas.toDataURL(mimeType, options.quality);
-          resolve({
-            blob,
-            dataUrl,
-            width: targetWidth,
-            height: targetHeight
-          });
-        },
-        mimeType,
-        options.quality
-      );
-    });
+    const outputWidth = (mockupImg.naturalWidth || 1200) * scale;
+    const outputHeight = (mockupImg.naturalHeight || 1200) * scale;
+    return this.renderer.export(sourceImg, settings, scale, getMimeType(options.format), options.quality, {
+      garment: mockupImg, transform, width: outputWidth, height: outputHeight,
+      composition: { embroideryRenderScale: scale, layoutWidth: 1200, layoutHeight: 1200 }
+    }, this.onProgress);
   }
 
-  /**
-   * Trigger browser file download
-   */
   public downloadFile(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');

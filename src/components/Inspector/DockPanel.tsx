@@ -32,7 +32,7 @@ interface DockPanelProps {
 type DockTab = 'parameters' | 'presets' | 'threads' | 'history';
 type AccordionSection = 'stitch' | 'border' | 'lighting' | 'color';
 
-export const DockPanel: React.FC<DockPanelProps> = ({
+export const DockPanel: React.FC<DockPanelProps> = React.memo(({
   settings,
   onUpdateSettings,
   isRendering,
@@ -420,4 +420,4 @@ export const DockPanel: React.FC<DockPanelProps> = ({
       )}
     </div>
   );
-};
+});
