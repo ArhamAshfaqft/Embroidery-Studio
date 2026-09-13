@@ -1,5 +1,5 @@
 import { MockupTemplate, MockupTransform, DiskMockupFile } from '../types';
-import { MOCKUP_TEMPLATES } from './mockupRenderer';
+import { MOCKUP_TEMPLATES, getMockupAssetUrl } from './mockupRenderer';
 
 
 /**
@@ -44,7 +44,28 @@ export function inferMockupCategory(filename: string): 'shirt' | 'sweatshirt' | 
 }
 
 /**
- * Query available mockup files from Electron IPC or Vite dev API
+ * All 15 production mockup filenames bundled in public/mockups/
+ */
+export const STATIC_MOCKUP_FILENAMES: string[] = [
+  'tshirt_black.jpg',
+  'tshirt_white_heavyweight.png',
+  'hoodie_gray.jpg',
+  'hoodie_forest_green.png',
+  'sweatshirt_oatmeal_crewneck.png',
+  'polo_navy_front.png',
+  'workshirt_khaki_front.png',
+  'cap_navy.jpg',
+  'cap_cream_five_panel.png',
+  'beanie_rust_cuffed.png',
+  'jacket_denim_back.png',
+  'jacket_black_bomber_back.png',
+  'tote_natural_canvas.png',
+  'backpack_charcoal_front.png',
+  'apron_charcoal_canvas.png'
+];
+
+/**
+ * Query available mockup files from Electron IPC, Vite dev API, or static fallback (Vercel/web)
  */
 export async function fetchDiskMockupFiles(): Promise<DiskMockupFile[]> {
   // 1. Try Native Electron IPC first
@@ -64,7 +85,7 @@ export async function fetchDiskMockupFiles(): Promise<DiskMockupFile[]> {
     const res = await fetch('/api/mockups', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         return data;
       }
     }
@@ -72,7 +93,15 @@ export async function fetchDiskMockupFiles(): Promise<DiskMockupFile[]> {
     // Silently fall back if running in pure offline static mode
   }
 
-  return [];
+  // 3. Fallback for Static Web Hosting (Vercel, GitHub Pages, Netlify)
+  return STATIC_MOCKUP_FILENAMES.map((filename) => ({
+    filename,
+    name: formatMockupTitle(filename),
+    category: inferMockupCategory(filename),
+    url: getMockupAssetUrl(filename),
+    mtime: Date.now(),
+    size: 0
+  }));
 }
 
 /**
@@ -120,13 +149,25 @@ export function probeImageDimensions(src: string): Promise<{ width: number; heig
 /**
  * Map of core default mockup filenames to their built-in template IDs
  */
-const CORE_FILENAME_MAP: Record<string, string> = {
+export const CORE_FILENAME_MAP: Record<string, string> = {
   'tshirt_black.jpg': 'mockup_tshirt_black',
   'tshirt_black.jpeg': 'mockup_tshirt_black',
+  'tshirt_white_heavyweight.png': 'mockup_tshirt_white_heavyweight',
   'hoodie_gray.jpg': 'mockup_hoodie_heather',
   'hoodie_gray.jpeg': 'mockup_hoodie_heather',
+  'hoodie_forest_green.png': 'mockup_hoodie_forest_green',
+  'sweatshirt_oatmeal_crewneck.png': 'mockup_sweatshirt_oatmeal_crewneck',
+  'polo_navy_front.png': 'mockup_polo_navy_front',
+  'workshirt_khaki_front.png': 'mockup_workshirt_khaki_front',
   'cap_navy.jpg': 'mockup_hat_navy',
-  'cap_navy.jpeg': 'mockup_hat_navy'
+  'cap_navy.jpeg': 'mockup_hat_navy',
+  'cap_cream_five_panel.png': 'mockup_cap_cream_five_panel',
+  'beanie_rust_cuffed.png': 'mockup_beanie_rust_cuffed',
+  'jacket_denim_back.png': 'mockup_jacket_denim_back',
+  'jacket_black_bomber_back.png': 'mockup_jacket_black_bomber_back',
+  'tote_natural_canvas.png': 'mockup_tote_natural_canvas',
+  'backpack_charcoal_front.png': 'mockup_backpack_charcoal_front',
+  'apron_charcoal_canvas.png': 'mockup_apron_charcoal_canvas'
 };
 
 /**
@@ -165,12 +206,12 @@ export async function syncMockupTemplatesWithDisk(
     const matchedCoreId = CORE_FILENAME_MAP[lowerFilename];
 
     if (matchedCoreId && coreTemplatesById.has(matchedCoreId)) {
-      // 1. One of the 3 calibrated studio templates
+      // 1. One of the calibrated studio templates
       const coreTpl = coreTemplatesById.get(matchedCoreId)!;
       resultTemplates.push({
         ...coreTpl,
         filename: file.filename,
-        imageUrl: file.url
+        imageUrl: coreTpl.imageUrl.startsWith('data:') ? coreTpl.imageUrl : file.url
       });
       processedIds.add(coreTpl.id);
     } else {

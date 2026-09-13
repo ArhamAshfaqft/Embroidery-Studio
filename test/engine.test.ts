@@ -52,9 +52,13 @@ assert(metallicPreset !== undefined && (metallicPreset.settings.specularStrength
 
 // Test 3: Mockup Templates
 console.log('\n3. Testing Mockup Templates...');
-assert(MOCKUP_TEMPLATES.length >= 3, 'All 3 photorealistic apparel templates (Shirt, Hoodie, Hat) available');
+assert(MOCKUP_TEMPLATES.length === 15, `All 15 production apparel templates available (found ${MOCKUP_TEMPLATES.length})`);
 const hatTemplate = MOCKUP_TEMPLATES.find(m => m.category === 'hat');
 assert(hatTemplate !== undefined && hatTemplate.width === 1200 && hatTemplate.height === 1200, 'Structured Cap mockup has 1200x1200px dimensions');
+assert(MOCKUP_TEMPLATES.some(m => m.category === 'shirt'), 'Shirt templates available');
+assert(MOCKUP_TEMPLATES.some(m => m.category === 'sweatshirt'), 'Sweatshirt / Hoodie templates available');
+assert(MOCKUP_TEMPLATES.some(m => m.category === 'jacket'), 'Jacket templates available');
+assert(MOCKUP_TEMPLATES.some(m => m.category === 'tote'), 'Tote & Backpack templates available');
 const aspectLandscape = 1600 / 900;
 const layoutHLand = Math.round(1200 / aspectLandscape);
 assert(layoutHLand === 675, '16:9 landscape mockup layout dimensions calculated accurately (1200x675)');

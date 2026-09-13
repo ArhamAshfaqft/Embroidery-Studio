@@ -6,11 +6,27 @@ import {
   REAL_CAP_DATA_URL
 } from './realMockupAssets';
 
+/**
+ * Resolve the public asset URL for a mockup file.
+ * Handles root deployment (Vercel), subpath routing, and Electron file:// protocols.
+ */
+export function getMockupAssetUrl(filename: string): string {
+  if (typeof window !== 'undefined' && (document.baseURI || window.location?.href)) {
+    try {
+      return new URL(`mockups/${filename}`, document.baseURI || window.location.href).href;
+    } catch {
+      return `mockups/${filename}`;
+    }
+  }
+  return `mockups/${filename}`;
+}
+
 export const MOCKUP_TEMPLATES: MockupTemplate[] = [
   {
     id: 'mockup_tshirt_black',
     name: 'Crewneck T-Shirt (Black)',
     category: 'shirt',
+    filename: 'tshirt_black.jpg',
     imageUrl: REAL_TSHIRT_DATA_URL,
     width: 1200,
     height: 1200,
@@ -29,9 +45,32 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
     placementZone: { x: 380, y: 340, width: 440, height: 380 }
   },
   {
+    id: 'mockup_tshirt_white_heavyweight',
+    name: 'Heavyweight T-Shirt (White)',
+    category: 'shirt',
+    filename: 'tshirt_white_heavyweight.png',
+    imageUrl: getMockupAssetUrl('tshirt_white_heavyweight.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 46,
+      scale: 0.38,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4,
+      shadowIntensity: 1.4,
+      fabricTextureStrength: 2,
+      creviceShadowStrength: 2.2
+    },
+    placementZone: { x: 380, y: 340, width: 440, height: 380 }
+  },
+  {
     id: 'mockup_hoodie_heather',
     name: 'Heavyweight Hoodie (Heather Grey)',
     category: 'sweatshirt',
+    filename: 'hoodie_gray.jpg',
     imageUrl: REAL_HOODIE_DATA_URL,
     width: 1200,
     height: 1200,
@@ -50,9 +89,98 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
     placementZone: { x: 380, y: 320, width: 440, height: 320 }
   },
   {
+    id: 'mockup_hoodie_forest_green',
+    name: 'Hoodie (Forest Green)',
+    category: 'sweatshirt',
+    filename: 'hoodie_forest_green.png',
+    imageUrl: getMockupAssetUrl('hoodie_forest_green.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 44,
+      scale: 0.36,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4.5,
+      shadowIntensity: 1.5,
+      fabricTextureStrength: 2,
+      creviceShadowStrength: 2.8
+    },
+    placementZone: { x: 380, y: 320, width: 440, height: 320 }
+  },
+  {
+    id: 'mockup_sweatshirt_oatmeal_crewneck',
+    name: 'Crewneck Sweatshirt (Oatmeal)',
+    category: 'sweatshirt',
+    filename: 'sweatshirt_oatmeal_crewneck.png',
+    imageUrl: getMockupAssetUrl('sweatshirt_oatmeal_crewneck.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 45,
+      scale: 0.38,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4.2,
+      shadowIntensity: 1.4,
+      fabricTextureStrength: 2.2,
+      creviceShadowStrength: 2.6
+    },
+    placementZone: { x: 380, y: 320, width: 440, height: 350 }
+  },
+  {
+    id: 'mockup_polo_navy_front',
+    name: 'Polo Shirt (Navy)',
+    category: 'shirt',
+    filename: 'polo_navy_front.png',
+    imageUrl: getMockupAssetUrl('polo_navy_front.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 46,
+      scale: 0.36,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 3.8,
+      shadowIntensity: 1.5,
+      fabricTextureStrength: 2.2,
+      creviceShadowStrength: 2.4
+    },
+    placementZone: { x: 380, y: 340, width: 440, height: 360 }
+  },
+  {
+    id: 'mockup_workshirt_khaki_front',
+    name: 'Workshirt (Khaki)',
+    category: 'shirt',
+    filename: 'workshirt_khaki_front.png',
+    imageUrl: getMockupAssetUrl('workshirt_khaki_front.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 46,
+      scale: 0.36,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4,
+      shadowIntensity: 1.4,
+      fabricTextureStrength: 2,
+      creviceShadowStrength: 2.5
+    },
+    placementZone: { x: 380, y: 330, width: 440, height: 380 }
+  },
+  {
     id: 'mockup_hat_navy',
     name: 'Structured Cap (Navy)',
     category: 'hat',
+    filename: 'cap_navy.jpg',
     imageUrl: REAL_CAP_DATA_URL,
     width: 1200,
     height: 1200,
@@ -69,6 +197,160 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       creviceShadowStrength: 2
     },
     placementZone: { x: 420, y: 340, width: 360, height: 240 }
+  },
+  {
+    id: 'mockup_cap_cream_five_panel',
+    name: 'Five-Panel Cap (Cream)',
+    category: 'hat',
+    filename: 'cap_cream_five_panel.png',
+    imageUrl: getMockupAssetUrl('cap_cream_five_panel.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 42,
+      scale: 0.28,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 3.2,
+      shadowIntensity: 1.3,
+      fabricTextureStrength: 1.8,
+      creviceShadowStrength: 2.2
+    },
+    placementZone: { x: 410, y: 360, width: 380, height: 250 }
+  },
+  {
+    id: 'mockup_beanie_rust_cuffed',
+    name: 'Cuffed Beanie (Rust)',
+    category: 'hat',
+    filename: 'beanie_rust_cuffed.png',
+    imageUrl: getMockupAssetUrl('beanie_rust_cuffed.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 45,
+      scale: 0.28,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 3.5,
+      shadowIntensity: 1.4,
+      fabricTextureStrength: 2.4,
+      creviceShadowStrength: 2.5
+    },
+    placementZone: { x: 410, y: 400, width: 380, height: 240 }
+  },
+  {
+    id: 'mockup_jacket_denim_back',
+    name: 'Denim Jacket (Back)',
+    category: 'jacket',
+    filename: 'jacket_denim_back.png',
+    imageUrl: getMockupAssetUrl('jacket_denim_back.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 44,
+      scale: 0.42,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4.5,
+      shadowIntensity: 1.5,
+      fabricTextureStrength: 2.5,
+      creviceShadowStrength: 2.8
+    },
+    placementZone: { x: 360, y: 290, width: 480, height: 430 }
+  },
+  {
+    id: 'mockup_jacket_black_bomber_back',
+    name: 'Black Bomber Jacket (Back)',
+    category: 'jacket',
+    filename: 'jacket_black_bomber_back.png',
+    imageUrl: getMockupAssetUrl('jacket_black_bomber_back.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 44,
+      scale: 0.42,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4.2,
+      shadowIntensity: 1.5,
+      fabricTextureStrength: 2,
+      creviceShadowStrength: 2.8
+    },
+    placementZone: { x: 360, y: 290, width: 480, height: 430 }
+  },
+  {
+    id: 'mockup_tote_natural_canvas',
+    name: 'Natural Canvas Tote Bag',
+    category: 'tote',
+    filename: 'tote_natural_canvas.png',
+    imageUrl: getMockupAssetUrl('tote_natural_canvas.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 52,
+      scale: 0.42,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4,
+      shadowIntensity: 1.4,
+      fabricTextureStrength: 2.4,
+      creviceShadowStrength: 2.5
+    },
+    placementZone: { x: 380, y: 400, width: 440, height: 400 }
+  },
+  {
+    id: 'mockup_backpack_charcoal_front',
+    name: 'Charcoal Backpack (Front)',
+    category: 'tote',
+    filename: 'backpack_charcoal_front.png',
+    imageUrl: getMockupAssetUrl('backpack_charcoal_front.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 50,
+      scale: 0.36,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 3.8,
+      shadowIntensity: 1.5,
+      fabricTextureStrength: 2.2,
+      creviceShadowStrength: 2.6
+    },
+    placementZone: { x: 390, y: 380, width: 420, height: 360 }
+  },
+  {
+    id: 'mockup_apron_charcoal_canvas',
+    name: 'Charcoal Canvas Apron',
+    category: 'shirt',
+    filename: 'apron_charcoal_canvas.png',
+    imageUrl: getMockupAssetUrl('apron_charcoal_canvas.png'),
+    width: 1200,
+    height: 1200,
+    defaultTransform: {
+      x: 50,
+      y: 42,
+      scale: 0.38,
+      rotation: 0,
+      opacity: 1,
+      blendMode: 'normal',
+      displacementStrength: 4.2,
+      shadowIntensity: 1.5,
+      fabricTextureStrength: 2.2,
+      creviceShadowStrength: 2.6
+    },
+    placementZone: { x: 400, y: 290, width: 400, height: 380 }
   }
 ];
 
