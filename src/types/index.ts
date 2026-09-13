@@ -129,6 +129,8 @@ export interface MockupTransform {
   shadowIntensity: number;
   fabricTextureStrength?: number;
   creviceShadowStrength?: number;
+  /** 0 disables photo matching; omitted uses automatic fabric blending. */
+  fabricBlendStrength?: number;
 }
 
 export interface MockupTemplate {

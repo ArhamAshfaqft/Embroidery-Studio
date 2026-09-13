@@ -1,5 +1,6 @@
 import { MockupTemplate, MockupTransform } from '../types';
 import { createRenderCanvas, RenderSource } from './renderCanvas';
+import { analyzePhotoLighting, fabricBlendAmount, PhotoLighting, softenThreadLayer } from './fabricIntegration';
 import {
   REAL_TSHIRT_DATA_URL,
   REAL_HOODIE_DATA_URL,
@@ -367,7 +368,7 @@ export interface MockupCompositionOptions {
 export class MockupRenderer {
   /**
    * Compose the embroidery graphic onto the apparel mockup canvas
-   * Features real fabric wrinkle displacement mapping and garment lighting interaction.
+   * Uses photograph-derived wrinkle displacement and relative garment lighting.
    */
   public composeMockup(
     mockupImg: RenderSource,
@@ -399,6 +400,7 @@ export class MockupRenderer {
     const layoutHeight = Math.max(1, options.layoutHeight ?? targetHeight);
     const outputScale = Math.min(targetWidth / layoutWidth, targetHeight / layoutHeight);
     const embroideryRenderScale = Math.max(0.01, options.embroideryRenderScale ?? 1);
+    const fabricBlend = fabricBlendAmount(transform.fabricBlendStrength);
 
     // Normalize the source render scale before applying the mockup output scale.
     // This preserves the same physical placement at 1x, 2x previews, and exports.
@@ -414,7 +416,7 @@ export class MockupRenderer {
     const hasFabricEffects =
       transform.displacementStrength > 0 ||
       (transform.fabricTextureStrength ?? 2) > 0 ||
-      (transform.creviceShadowStrength ?? 2.5) > 0;
+      (transform.creviceShadowStrength ?? 2.5) > 0 || fabricBlend > 0;
 
     if (!options.skipDisplacement && hasFabricEffects && embW > 10 && embH > 10) {
       // Crop the displacement working buffers to the visible rotated footprint,
@@ -424,12 +426,14 @@ export class MockupRenderer {
       const corners = [[0, 0], [targetWidth, 0], [0, targetHeight], [targetWidth, targetHeight]]
         .map(([x, y]) => ({ x: (x - posX) * c + (y - posY) * s + embW / 2,
           y: -(x - posX) * s + (y - posY) * c + embH / 2 }));
-      const halo = Math.ceil(((8 * scale + transform.shadowIntensity * 1.6) * 3 +
-        (4 * scale + transform.shadowIntensity * 1.2) + (transform.displacementStrength || 1) * 0.45) * outputScale + 8);
-      const left = Math.max(0, Math.floor(Math.min(...corners.map(p => p.x))) - halo);
-      const top = Math.max(0, Math.floor(Math.min(...corners.map(p => p.y))) - halo);
-      const right = Math.min(embW, Math.ceil(Math.max(...corners.map(p => p.x))) + halo);
-      const bottom = Math.min(embH, Math.ceil(Math.max(...corners.map(p => p.y))) + halo);
+      // The destination must extend beyond the artwork: displaced stitches can
+      // occupy previously transparent pixels, including outside the artboard.
+      const warpHalo = Math.ceil((Math.max(0, transform.displacementStrength) * 2.4 + 2) * outputScale) + 2;
+      const halo = warpHalo + Math.ceil(6 * outputScale);
+      const left = Math.max(-warpHalo, Math.floor(Math.min(...corners.map(p => p.x))) - halo);
+      const top = Math.max(-warpHalo, Math.floor(Math.min(...corners.map(p => p.y))) - halo);
+      const right = Math.min(embW + warpHalo, Math.ceil(Math.max(...corners.map(p => p.x))) + halo);
+      const bottom = Math.min(embH + warpHalo, Math.ceil(Math.max(...corners.map(p => p.y))) + halo);
       if (right <= left || bottom <= top) return outputCanvas;
       finalEmbroiderySource = this.applyFabricDisplacement(
         ctx,
@@ -443,7 +447,9 @@ export class MockupRenderer {
         transform.creviceShadowStrength ?? 2.5,
         outputScale,
         rotRad,
-        { x: left, y: top, width: right - left, height: bottom - top }
+        { x: left, y: top, width: right - left, height: bottom - top },
+        fabricBlend,
+        fabricBlend > 0 ? analyzePhotoLighting(mockupImg) : { tint: [1, 1, 1], exposure: 1, confidence: 0 }
       );
       drawX += left; drawY += top; drawW = right - left; drawH = bottom - top;
     }
@@ -467,9 +473,10 @@ export class MockupRenderer {
         maskCtx.fillStyle = '#000000';
         maskCtx.fillRect(0, 0, drawW, drawH);
 
-        const contactDist = (0.2 + (transform.shadowIntensity / 10) * 0.75) * outputScale;
+        const contactDist = (0.2 + (transform.shadowIntensity / 10) * 0.35) * outputScale;
         const contactBlur = Math.max(0.6, (0.5 + (transform.shadowIntensity / 10) * 1.25) * outputScale);
-        const contactAlpha = Math.min(0.35, (transform.shadowIntensity / 10) * 0.30) * transform.opacity;
+        const contactAlpha = Math.min(0.35, (transform.shadowIntensity / 10) * 0.30 +
+          fabricBlend * .12 * Math.min(1, transform.shadowIntensity / .6)) * transform.opacity;
 
         ctx.save();
         ctx.globalAlpha = contactAlpha;
@@ -509,7 +516,9 @@ export class MockupRenderer {
     creviceStrength: number,
     outputScale: number,
     rotation: number,
-    crop: { x: number; y: number; width: number; height: number }
+    crop: { x: number; y: number; width: number; height: number },
+    fabricBlend: number,
+    photoLighting: PhotoLighting
   ): RenderSource {
     const originalWidth = embW, originalHeight = embH;
     embW = crop.width; embH = crop.height;
@@ -539,10 +548,11 @@ export class MockupRenderer {
       localToImage(0, 0), localToImage(embW, 0),
       localToImage(0, embH), localToImage(embW, embH)
     ];
-    const sceneLeft = Math.max(0, Math.floor(Math.min(...mappedCorners.map(p => p.x))) - 2);
-    const sceneTop = Math.max(0, Math.floor(Math.min(...mappedCorners.map(p => p.y))) - 2);
-    const sceneRight = Math.min(garmentCtx.canvas.width, Math.ceil(Math.max(...mappedCorners.map(p => p.x))) + 2);
-    const sceneBottom = Math.min(garmentCtx.canvas.height, Math.ceil(Math.max(...mappedCorners.map(p => p.y))) + 2);
+    const sceneHalo = Math.ceil(40 * outputScale) + 4;
+    const sceneLeft = Math.max(0, Math.floor(Math.min(...mappedCorners.map(p => p.x))) - sceneHalo);
+    const sceneTop = Math.max(0, Math.floor(Math.min(...mappedCorners.map(p => p.y))) - sceneHalo);
+    const sceneRight = Math.min(garmentCtx.canvas.width, Math.ceil(Math.max(...mappedCorners.map(p => p.x))) + sceneHalo);
+    const sceneBottom = Math.min(garmentCtx.canvas.height, Math.ceil(Math.max(...mappedCorners.map(p => p.y))) + sceneHalo);
     if (sceneRight <= sceneLeft || sceneBottom <= sceneTop) return displacedCanvas;
 
     let garmentData: ImageData;
@@ -557,38 +567,53 @@ export class MockupRenderer {
     const outData = dispCtx.createImageData(embW, embH);
     const outPixels = outData.data;
 
-    // Fast luminance lookup helper with boundary clamping
-    const getRawLum = (gx: number, gy: number): number => {
-      const cx = gx < 0 ? 0 : gx >= embW ? embW - 1 : gx;
-      const cy = gy < 0 ? 0 : gy >= embH ? embH - 1 : gy;
-      const mapped = localToImage(cx, cy);
+    // Sample the photograph beyond the artwork so folds do not flatten at its
+    // edge. Only the actual photograph bounds are clamped.
+    const getPhotoIndex = (gx: number, gy: number): number => {
+      const mapped = localToImage(gx, gy);
       const imageX = Math.max(0, Math.min(sceneWidth - 1, Math.round(mapped.x) - sceneLeft));
       const imageY = Math.max(0, Math.min(garmentData.height - 1, Math.round(mapped.y) - sceneTop));
-      const idx = (imageY * sceneWidth + imageX) * 4;
+      return (imageY * sceneWidth + imageX) * 4;
+    };
+    const getRawLum = (gx: number, gy: number): number => {
+      const idx = getPhotoIndex(gx, gy);
       return 0.299 * gPixels[idx] + 0.587 * gPixels[idx + 1] + 0.114 * gPixels[idx + 2];
     };
+    const colourBoundary = (ax: number, ay: number, bx: number, by: number) => {
+      // Average before comparing chroma. Raw RGB in black fabric contains
+      // sensor/codec noise that must never turn into a jagged displacement field.
+      const average = (x: number, y: number) => {
+        const rgb = [0, 0, 0];
+        const radius = Math.max(1, Math.round(2 * outputScale));
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const index = getPhotoIndex(x + dx * radius, y + dy * radius);
+          for (let c = 0; c < 3; c++) rgb[c] += gPixels[index + c] / 9;
+        }
+        return rgb;
+      };
+      const a = average(ax, ay), b = average(bx, by);
+      const sumA = a[0] + a[1] + a[2] + 72;
+      const sumB = b[0] + b[1] + b[2] + 72;
+      let delta = 0;
+      for (let c = 0; c < 3; c++) delta = Math.max(delta, Math.abs((a[c] + 24) / sumA - (b[c] + 24) / sumB));
+      return Math.exp(-28 * delta);
+    };
 
-    // Calculate baseline ambient garment luminance across the placed area
-    let totalGarmentLum = 0;
-    let garmentSampleCount = 0;
-    const lumStep = Math.max(1, Math.floor(sceneWidth / 24));
-    for (let sy = 0; sy < garmentData.height; sy += lumStep) {
-      for (let sx = 0; sx < sceneWidth; sx += lumStep) {
-        const sidx = (sy * sceneWidth + sx) * 4;
-        totalGarmentLum += 0.299 * gPixels[sidx] + 0.587 * gPixels[sidx + 1] + 0.114 * gPixels[sidx + 2];
-        garmentSampleCount++;
+    // Use the cloth under actual stitches, not the rotated bounding rectangle
+    // (which may include a bright studio backdrop or a collar opening).
+    const lightSamples: number[] = [];
+    const lumStep = Math.max(1, Math.floor(Math.min(embW, embH) / 80));
+    for (let y = 0; y < embH; y += lumStep) {
+      for (let x = 0; x < embW; x += lumStep) {
+        const point = localToImage(x, y);
+        if (embPixels[(y * embW + x) * 4 + 3] > 128 && point.x >= 0 && point.y >= 0 &&
+          point.x < garmentCtx.canvas.width && point.y < garmentCtx.canvas.height) {
+          lightSamples.push(getRawLum(x, y));
+        }
       }
     }
-    const ambientGarmentLum = garmentSampleCount > 0 ? totalGarmentLum / garmentSampleCount : 128;
-
-    // 3x3 binomial-smoothed luminance map removes camera sensor noise before derivative calculation
-    const getSmoothLum = (gx: number, gy: number): number => {
-      return (
-        getRawLum(gx - 1, gy - 1) + 2 * getRawLum(gx, gy - 1) + getRawLum(gx + 1, gy - 1) +
-        2 * getRawLum(gx - 1, gy) + 4 * getRawLum(gx, gy) + 2 * getRawLum(gx + 1, gy) +
-        getRawLum(gx - 1, gy + 1) + 2 * getRawLum(gx, gy + 1) + getRawLum(gx + 1, gy + 1)
-      ) / 16;
-    };
+    lightSamples.sort((a, b) => a - b);
+    const ambientGarmentLum = lightSamples[Math.floor(lightSamples.length * 0.6)] ?? 128;
 
     // Multi-Scale Sobel Radii calibrated to physical garment proportions:
     // Fine (2-3px): seam ridges and micro-creases
@@ -597,19 +622,84 @@ export class MockupRenderer {
     const rFine = Math.max(1, Math.round(2 * outputScale));
     const rMed = Math.max(3, Math.round(8 * outputScale));
     const rCoarse = Math.max(8, Math.round(24 * outputScale));
+    const gateStep = Math.max(2, Math.round(6 * outputScale));
+    const gateW = Math.ceil(embW / gateStep) + 1, gateH = Math.ceil(embH / gateStep) + 1;
+    const colourGates = new Float32Array(gateW * gateH * 2);
+    if (fabricBlend > 0) {
+      for (let gy = 0; gy < gateH; gy++) for (let gx = 0; gx < gateW; gx++) {
+        const x = gx * gateStep, y = gy * gateStep, i = (gy * gateW + gx) * 2;
+        colourGates[i] = colourBoundary(x - rMed, y, x + rMed, y);
+        colourGates[i + 1] = colourBoundary(x, y - rMed, x, y + rMed);
+      }
+    }
+    const getColourGate = (x: number, y: number, axis: number) => {
+      if (fabricBlend === 0) return 1;
+      const gx = x / gateStep, gy = y / gateStep, ix = Math.floor(gx), iy = Math.floor(gy);
+      const fx = gx - ix, fy = gy - iy, i = (iy * gateW + ix) * 2 + axis;
+      return colourGates[i] * (1 - fx) * (1 - fy) + colourGates[i + 2] * fx * (1 - fy) +
+        colourGates[i + gateW * 2] * (1 - fx) * fy + colourGates[i + gateW * 2 + 2] * fx * fy;
+    };
 
-    // Directional displacement amplitude scale:
-    // Calibrated so warpStrength 4 produces visible 6-9px physical wrap conforming to folds,
-    // and warpStrength 10 produces deep 18-24px dramatic fabric conformance.
+    // Cache a physically scaled low-pass map once. Cloth grain belongs in the
+    // material shading, rather than jagged displacement of every thread edge.
+    const blurRadius = Math.max(1, Math.round(2 * outputScale));
+    const pad = rCoarse + blurRadius + 1;
+    const mapW = embW + pad * 2, mapH = embH + pad * 2;
+    const horizontal = new Float32Array(mapW * mapH);
+    const smooth = new Float32Array(mapW * mapH);
+    const diameter = blurRadius * 2 + 1;
+    for (let y = 0; y < mapH; y++) {
+      let sum = 0;
+      for (let x = -blurRadius; x <= blurRadius; x++) sum += getRawLum(x - pad, y - pad);
+      for (let x = 0; x < mapW; x++) {
+        horizontal[y * mapW + x] = sum / diameter;
+        sum += getRawLum(x + blurRadius + 1 - pad, y - pad) - getRawLum(x - blurRadius - pad, y - pad);
+      }
+    }
+    for (let x = 0; x < mapW; x++) {
+      let sum = 0;
+      for (let y = -blurRadius; y <= blurRadius; y++) sum += horizontal[Math.max(0, y) * mapW + x];
+      for (let y = 0; y < mapH; y++) {
+        smooth[y * mapW + x] = sum / diameter;
+        sum += horizontal[Math.min(mapH - 1, y + blurRadius + 1) * mapW + x] -
+          horizontal[Math.max(0, y - blurRadius) * mapW + x];
+      }
+    }
+    const getSmoothLum = (x: number, y: number) => smooth[(y + pad) * mapW + x + pad];
+
+    // Estimate texture and edge definition only under the artwork. These are
+    // conservative image statistics, not a claim to identify a fabric material.
+    let detail = 0, definition = 0, edgeCount = 0, materialSamples = 0;
+    for (let y = 0; y < embH; y += lumStep) {
+      for (let x = 0; x < embW; x += lumStep) {
+        if (embPixels[(y * embW + x) * 4 + 3] < 128) continue;
+        detail += Math.min(20, Math.abs(getRawLum(x, y) - getSmoothLum(x, y)));
+        const near = Math.abs(getRawLum(x + rFine, y) - getRawLum(x - rFine, y)) +
+          Math.abs(getRawLum(x, y + rFine) - getRawLum(x, y - rFine));
+        const far = Math.abs(getRawLum(x + rMed, y) - getRawLum(x - rMed, y)) +
+          Math.abs(getRawLum(x, y + rMed) - getRawLum(x, y - rMed));
+        if (far > 18) { definition += Math.min(1, near / far); edgeCount++; }
+        materialSamples++;
+      }
+    }
+    const roughness = Math.min(1, detail / Math.max(1, materialSamples) / Math.max(24, ambientGarmentLum) * 12);
+    const softness = edgeCount > 20 ? Math.max(0, 1 - definition / edgeCount * 2) : .25;
+    softenThreadLayer(embData, Math.max(1, outputScale), fabricBlend * (.12 + softness * .18));
+
+    // Bound displacement at every strength so high-contrast seams cannot tear
+    // the artwork. Relative normalization also makes dark cloth folds usable.
     const dispFactor = (warpStrength / 10) * 165.0 * outputScale;
-    const creviceFactor = (creviceStrength / 10);
+    const maxDisplacement = Math.max(0, warpStrength) * 2.4 * outputScale;
+    const lightNormalization = Math.min(3, 180 / (ambientGarmentLum + 24));
+    const creviceFactor = Math.max(0, creviceStrength) * 0.24;
     const textFactor = (textureStrength / 10);
+    const bend = (gradient: number) => maxDisplacement > 0
+      ? maxDisplacement * Math.tanh(gradient * dispFactor * lightNormalization / maxDisplacement)
+      : 0;
 
     for (let y = 0; y < embH; y++) {
       for (let x = 0; x < embW; x++) {
         const idx = (y * embW + x) * 4;
-        const alpha = embPixels[idx + 3];
-        if (alpha === 0) continue;
 
         // 1. Multi-scale Sobel Octaves on smoothed fabric luminance
         // Fine (seams & micro-creases)
@@ -634,12 +724,18 @@ export class MockupRenderer {
         const c_gy = (c_bl + 2 * c_bc + c_br - (c_tl + 2 * c_tc + c_tr)) / 1020;
 
         // Balanced gradient combination: Coarse & Medium drive bulk fabric warp; Fine gives subtle micro-flex
-        const gradX = f_gx * 0.12 + m_gx * 0.50 + c_gx * 0.38;
-        const gradY = f_gy * 0.12 + m_gy * 0.50 + c_gy * 0.38;
+        // Dye boundaries should not act like folds. This suppresses chromatic
+        // edges; a monochrome printed pattern remains intrinsically ambiguous.
+        const gateX = getColourGate(x, y, 0);
+        const gateY = getColourGate(x, y, 1);
+        const gradX = (f_gx * 0.12 + m_gx * 0.50 + c_gx * 0.38) * gateX;
+        const gradY = (f_gy * 0.12 + m_gy * 0.50 + c_gy * 0.38) * gateY;
 
         // 2. Displace sampling coordinates
-        const srcX = Math.max(0, Math.min(embW - 1, x + gradX * dispFactor));
-        const srcY = Math.max(0, Math.min(embH - 1, y + gradY * dispFactor));
+        const srcX = x + bend(gradX);
+        const srcY = y + bend(gradY);
+        // Transparent outside the source, never repeat opaque border pixels.
+        if (srcX < 0 || srcY < 0 || srcX >= embW - 1 || srcY >= embH - 1) continue;
 
         // Bilinear interpolation
         const x0 = Math.floor(srcX), y0 = Math.floor(srcY);
@@ -667,21 +763,27 @@ export class MockupRenderer {
         // Compares local fold brightness against ambient garment lighting so dark folds visibly shade the stitches
         const centerLum = getRawLum(x, y);
         const localSmoothLum = getSmoothLum(x, y);
-        const garmentRelLight = (localSmoothLum + 12) / (ambientGarmentLum + 12);
+        const broadLum = (c_tl + 2 * c_tc + c_tr + 2 * c_ml + 4 * localSmoothLum + 2 * c_mr + c_bl + 2 * c_bc + c_br) / 16;
+        const shadingConfidence = Math.min(gateX, gateY);
+        const localRelLight = (localSmoothLum + 12) / (ambientGarmentLum + 12);
+        const garmentRelLight = 1 + (localRelLight - 1) * shadingConfidence;
 
-        let foldShadeMultiplier = 1.0;
-        if (garmentRelLight < 1.0) {
-          // In a fold shadow: darken the embroidery in tandem with the garment crease
-          foldShadeMultiplier = Math.max(0.38, 1.0 - (1.0 - garmentRelLight) * creviceFactor * 1.15);
-        } else {
-          // On a fold ridge: catch ambient specular highlight along the crease apex
-          foldShadeMultiplier = Math.min(1.22, 1.0 + (garmentRelLight - 1.0) * creviceFactor * 0.40);
-        }
+        // Transfer relative illumination, preserving opaque thread colours on
+        // dark garments. A power curve retains real fold contrast at defaults.
+        const foldShadeMultiplier = garmentRelLight < 1
+          ? Math.max(0.32, Math.pow(garmentRelLight, Math.min(1.8, creviceFactor)))
+          : Math.min(1.12, Math.pow(garmentRelLight, creviceFactor * 0.22));
+        // Broad photographic light still transfers when wrinkle and crease
+        // controls are zero. Avoid double shading when fold lighting is active.
+        const broadRelLight = 1 + ((broadLum + 12) / (ambientGarmentLum + 12) - 1) * shadingConfidence;
+        const photoShade = Math.max(.65, Math.min(1.08,
+          Math.pow(broadRelLight, Math.max(0, .7 - creviceFactor) * fabricBlend)));
 
         // 4. Fabric Grain & Weave High-Pass Texture
         // Extracts the photograph's authentic fabric fibers/weave directly from garment image
         const photoGrainDiff = (centerLum - localSmoothLum);
-        const fabricGrainSignal = (photoGrainDiff / 128.0) * textFactor * 0.70;
+        const fabricGrainSignal = Math.max(-.025, Math.min(.025,
+          (photoGrainDiff / 128.0) * (textFactor * .70 + fabricBlend * .16)));
         const grainMultiplier = Math.max(0.70, Math.min(1.30, 1.0 + fabricGrainSignal));
 
         // 5. Compose realistic channels with Fabric Weave & Fold Shading
@@ -694,7 +796,12 @@ export class MockupRenderer {
           const baseColor = (premultiplied / sampledAlpha);
 
           // Apply photographic cloth grain modulation and fold crease lighting
-          const integrated = baseColor * grainMultiplier * foldShadeMultiplier;
+          // A bounded highlight shoulder avoids shiny, over-crisp digital
+          // thread on matte/noisy photographs. Never multiply by garment dye.
+          const shoulder = Math.max(0, baseColor - 175) * fabricBlend * (.045 + roughness * .12);
+          const tint = 1 + (photoLighting.tint[channel] - 1) * fabricBlend;
+          const exposure = 1 + (photoLighting.exposure - 1) * fabricBlend;
+          const integrated = (baseColor - shoulder) * grainMultiplier * foldShadeMultiplier * photoShade * tint * exposure;
           outPixels[idx + channel] = Math.min(255, Math.max(0, Math.round(integrated)));
         }
         outPixels[idx + 3] = Math.round(sampledAlpha * 255);

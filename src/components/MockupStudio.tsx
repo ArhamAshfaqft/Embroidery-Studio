@@ -10,6 +10,7 @@ import { BackgroundRenderer, isRenderCancelled } from '../engine/backgroundRende
 import { getMockupRenderScale } from '../engine/renderSizing';
 import { loadSourceImage } from '../engine/sourceImages';
 import { MockupRenderer } from '../engine/mockupRenderer';
+import { getMockupEmbroiderySettings } from '../engine/mockupSettings';
 import { MockupControls } from './Inspector/MockupControls';
 import { Ruler } from './Controls/Ruler';
 import {
@@ -208,7 +209,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     const timer = window.setTimeout(async () => {
       setRenderStatus('Preparing detailed mockup artwork…');
       try {
-        const result = await embroideryRenderer.current!.renderEmbroideryAsync(source, settings, sourceRenderScale,
+        const result = await embroideryRenderer.current!.renderEmbroideryAsync(source, getMockupEmbroiderySettings(settings), sourceRenderScale,
           message => { if (!cancelled) setRenderStatus(message); });
         if (cancelled) return;
         embroideryCanvasRef.current = result.canvas;

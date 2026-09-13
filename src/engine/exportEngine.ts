@@ -1,6 +1,7 @@
 import { ExportOptions, EmbroiderySettings, MockupTransform } from '../types';
 import { BackgroundRenderer } from './backgroundRenderer';
 import type { SegmentationProgress } from './localSegmentation';
+import { getMockupEmbroiderySettings } from './mockupSettings';
 
 function getMimeType(format: string): string {
   if (format === 'jpeg' || format === 'jpg') return 'image/jpeg';
@@ -42,7 +43,7 @@ export class ExportEngine {
     const layoutWidth = naturalW;
     const layoutHeight = naturalH;
 
-    return this.renderer.export(sourceImg, settings, scale, getMimeType(options.format), options.quality, {
+    return this.renderer.export(sourceImg, getMockupEmbroiderySettings(settings), scale, getMimeType(options.format), options.quality, {
       garment: mockupImg, transform, width: outputWidth, height: outputHeight,
       composition: { embroideryRenderScale: scale, layoutWidth, layoutHeight }
     }, this.onProgress);

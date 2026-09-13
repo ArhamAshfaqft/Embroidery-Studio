@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { MockupTemplate, MockupTransform } from '../../types';
 import { MOCKUP_TEMPLATES } from '../../engine/mockupRenderer';
+import { DEFAULT_FABRIC_BLEND } from '../../engine/fabricIntegration';
 import { SliderControl } from '../Controls/SliderControl';
 import {
   Upload,
@@ -272,8 +273,34 @@ export const MockupControls: React.FC<MockupControlsProps> = ({
       {/* Garment Conformance & Realistic Wrap */}
       <div className="space-y-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Realistic Fabric Wrap & Shading
+          Fabric Blending & Wrinkle Wrap
         </span>
+
+        <button
+          type="button"
+          onClick={() => onUpdateTransform({
+            blendMode: 'normal', opacity: 1,
+            fabricBlendStrength: DEFAULT_FABRIC_BLEND,
+            displacementStrength: currentMockup.category === 'hat' ? 3 : 4.5,
+            fabricTextureStrength: 1.5, creviceShadowStrength: 4, shadowIntensity: 1.5
+          })}
+          className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-neutral-100 hover:bg-white/10 transition-colors"
+        >
+          Apply natural fabric blend
+        </button>
+        <p className="text-[11px] leading-relaxed text-neutral-500">
+          Matches photo lighting, texture and edge softness, even on smooth fabric. Wrinkle wrap follows visible folds. Wait for Full-detail mockup after placing your design.
+        </p>
+
+        <SliderControl
+          label="Automatic Fabric Blend"
+          value={transform.fabricBlendStrength ?? DEFAULT_FABRIC_BLEND}
+          min={0}
+          max={10}
+          step={0.5}
+          defaultValue={DEFAULT_FABRIC_BLEND}
+          onChange={(fabricBlendStrength: number) => onUpdateTransform({ fabricBlendStrength })}
+        />
 
         <SliderControl
           label="Fabric Wrinkle Warp"
@@ -324,8 +351,8 @@ export const MockupControls: React.FC<MockupControlsProps> = ({
             onChange={(e) => onUpdateTransform({ blendMode: e.target.value as any })}
             className="w-full bg-[#1c1c22] border border-neutral-700/80 rounded-md px-2.5 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-neutral-400"
           >
-            <option value="normal">Normal (Opaque 3D Stitches)</option>
-            <option value="multiply">Multiply (Dark Fabric Integration)</option>
+            <option value="normal">Normal (Preserve Thread Colours)</option>
+            <option value="multiply">Multiply (Darken Colours)</option>
             <option value="overlay">Overlay (Fabric Grain Wash)</option>
             <option value="hard-light">Hard Light (High Contrast)</option>
           </select>

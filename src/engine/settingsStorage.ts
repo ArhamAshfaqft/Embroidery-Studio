@@ -1,6 +1,7 @@
 import { EmbroiderySettings, MockupTransform, ThreadStudioConfig } from '../types';
 import { DEFAULT_EMBROIDERY_SETTINGS, DEFAULT_THREAD_STUDIO_CONFIG } from './presets';
 import { MOCKUP_TEMPLATES } from './mockupRenderer';
+import { DEFAULT_FABRIC_BLEND } from './fabricIntegration';
 
 export const STORAGE_KEY_SETTINGS = 'embroidery_studio_user_settings_v1';
 
@@ -99,6 +100,8 @@ function mergeTransformWithDefaults(
   return {
     ...defaultTransform,
     ...savedTransform,
+    fabricBlendStrength: typeof savedTransform.fabricBlendStrength === 'number' && Number.isFinite(savedTransform.fabricBlendStrength)
+      ? Math.max(0, Math.min(10, savedTransform.fabricBlendStrength)) : DEFAULT_FABRIC_BLEND,
     // Ensure realistic wrap properties are numeric and safely defaulted
     displacementStrength: typeof savedTransform.displacementStrength === 'number'
       ? savedTransform.displacementStrength
