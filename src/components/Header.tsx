@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppScreen } from '../types';
+import { AccessStatus } from '../engine/licenseEngine';
 import {
   Layers,
   Sparkles,
@@ -12,7 +13,9 @@ import {
   FileImage,
   Wand2,
   Eye,
-  EyeOff
+  EyeOff,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -30,6 +33,9 @@ interface HeaderProps {
   onOpenExport: () => void;
   onTriggerSmartOptimize: () => void;
   sourceName: string;
+  hasSourceAsset?: boolean;
+  accessStatus?: AccessStatus;
+  onOpenLicenseModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,36 +52,19 @@ export const Header: React.FC<HeaderProps> = ({
   onTogglePreviewMode,
   onOpenExport,
   onTriggerSmartOptimize,
-  sourceName
+  sourceName,
+  hasSourceAsset = false,
+  accessStatus,
+  onOpenLicenseModal
 }) => {
   return (
     <header className="h-13 border-b border-white/[0.08] bg-[#09090b]/95 backdrop-blur-md flex items-center justify-between px-4 select-none z-30 shrink-0">
-      {/* Left: Studio Branding & Active Asset */}
-      <div className="flex items-center space-x-3.5">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-6 h-6 rounded-md bg-gradient-to-b from-white to-neutral-300 flex items-center justify-center shadow-md">
-            <span className="text-[12px] font-bold text-neutral-950 tracking-tighter">R</span>
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center space-x-1.5">
-              <span className="text-[13px] font-semibold tracking-tight text-white">
-                Raven Studio
-              </span>
-              <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-400 bg-white/[0.06] px-1.5 py-0.2 rounded border border-white/[0.08]">
-                v2.4 Pro
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="h-4 w-[1px] bg-white/[0.08]" />
-
-        <div className="flex items-center space-x-1.5 text-xs text-neutral-400 max-w-[200px]">
-          <FileImage size={12} className="text-neutral-500 shrink-0" />
-          <span className="font-mono text-[11px] text-neutral-300 truncate tracking-tight">
-            {sourceName}
-          </span>
-        </div>
+      {/* Left: Active Document Asset */}
+      <div className="flex items-center space-x-2 text-xs text-neutral-400 max-w-[280px]">
+        <FileImage size={13} className="text-neutral-400 shrink-0" />
+        <span className="font-mono text-xs text-neutral-200 truncate font-medium tracking-tight">
+          {sourceName}
+        </span>
       </div>
 
       {/* Center: Main Screen Workflow Tabs */}
@@ -123,16 +112,19 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Smart Auto-Optimize & Viewport Controls & Export */}
       <div className="flex items-center space-x-2">
         {/* Smart Auto-Optimize Button */}
-        <button
-          onClick={onTriggerSmartOptimize}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#1e1e26] border border-white/20 text-white text-xs font-medium hover:bg-[#282834] hover:border-white/40 transition-all shadow-sm group"
-          title="Smart Auto-Optimize: Analyzes artwork strokes and colors to apply optimal embroidery settings"
-        >
-          <Wand2 size={12} className="text-white group-hover:rotate-12 transition-transform" />
-          <span>Smart Auto-Tune</span>
-        </button>
-
-        <div className="h-4 w-[1px] bg-white/[0.08]" />
+        {activeScreen === 'embroidery' && hasSourceAsset && (
+          <>
+            <button
+              onClick={onTriggerSmartOptimize}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#1e1e26] border border-white/20 text-white text-xs font-medium hover:bg-[#282834] hover:border-white/40 transition-all shadow-sm group"
+              title="Smart Auto-Optimize: Analyzes artwork strokes and colors to apply optimal embroidery settings"
+            >
+              <Wand2 size={12} className="text-white group-hover:rotate-12 transition-transform" />
+              <span>Smart Auto-Tune</span>
+            </button>
+            <div className="h-4 w-[1px] bg-white/[0.08]" />
+          </>
+        )}
 
         {/* Zoom Controls */}
         {activeScreen !== 'create' && (
@@ -208,14 +200,46 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {/* License & 14-Day Free Trial Status Badge */}
+        {accessStatus && onOpenLicenseModal && (
+          <button
+            onClick={onOpenLicenseModal}
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all shadow-sm ${
+              accessStatus.status === 'licensed'
+                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/25'
+                : accessStatus.status === 'trial_expired'
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30 animate-pulse'
+                : 'bg-amber-400/15 border-amber-400/35 text-amber-300 hover:bg-amber-400/25'
+            }`}
+            title="Manage License & 14-Day Free Trial"
+          >
+            {accessStatus.status === 'licensed' ? (
+              <ShieldCheck size={12} className="text-emerald-400" />
+            ) : accessStatus.status === 'trial_expired' ? (
+              <Lock size={12} className="text-rose-400" />
+            ) : (
+              <Sparkles size={12} className="text-amber-400" />
+            )}
+            <span className="font-mono text-[11px] font-semibold">
+              {accessStatus.status === 'licensed'
+                ? 'PRO'
+                : accessStatus.status === 'trial_expired'
+                ? 'Trial Expired'
+                : `Trial: ${accessStatus.daysRemaining}d left`}
+            </span>
+          </button>
+        )}
+
         {/* Primary Export Button */}
-        <button
-          onClick={onOpenExport}
-          className="pro-btn flex items-center space-x-1.5 px-3.5 py-1.5 rounded-md text-neutral-950 text-xs font-semibold transition-all"
-        >
-          <Download size={13} />
-          <span>Export</span>
-        </button>
+        {activeScreen !== 'create' && hasSourceAsset && (
+          <button
+            onClick={onOpenExport}
+            className="pro-btn flex items-center space-x-1.5 px-3.5 py-1.5 rounded-md text-neutral-950 text-xs font-semibold transition-all"
+          >
+            <Download size={13} />
+            <span>Export</span>
+          </button>
+        )}
       </div>
     </header>
   );

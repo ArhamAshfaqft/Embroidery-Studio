@@ -84,7 +84,7 @@ export class SmartOptimizer {
         const idx = (y * width + x) * 4;
         const a = pixels[idx + 3];
 
-        if (a > 25) {
+        if (a >= 40) {
           nonTransparentCount++;
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
@@ -144,7 +144,7 @@ export class SmartOptimizer {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const idx = (y * width + x) * 4;
-        if (pixels[idx + 3] > 25) {
+        if (pixels[idx + 3] >= 40) {
           const dx = x - cx;
           const dy = y - cy;
           mu20 += dx * dx;
@@ -180,7 +180,9 @@ export class SmartOptimizer {
     const avgDistance = distanceCount > 0 ? distanceSum / distanceCount : 4;
     const strokeThicknessEstimated = avgDistance * 2.0;
 
-    const isGoldMetallic = goldPixelCount / nonTransparentCount > 0.22;
+    const hasMultipleColorThemes = uniqueColorBuckets.size >= 4;
+    const isDetailedMascot = hasMultipleColorThemes && fillCoverageRatio > 0.35;
+    const isGoldMetallic = !isDetailedMascot && (goldPixelCount / nonTransparentCount > 0.28);
     const isFineDetail = strokeThicknessEstimated < 7.0 || fillCoverageRatio < 0.24;
     const isSolidCrest = fillCoverageRatio > 0.55 && maxDistance > 14;
     const isTypography = bboxW / bboxH > 2.0 || (strokeThicknessEstimated >= 7.0 && strokeThicknessEstimated <= 14.0 && fillCoverageRatio < 0.45);
@@ -201,18 +203,34 @@ export class SmartOptimizer {
     newSettings.stitchAngle = optimalStitchAngle;
     decisions.push(`Calculated principal visual axis (${principalDeg}°) -> Set stitch angle to ${optimalStitchAngle}° for anisotropic sheen.`);
 
-    if (isGoldMetallic) {
+    if (isDetailedMascot) {
+      designType = 'detailed_mascot';
+      designTypeLabel = 'Detailed Mascot / Character';
+      confidence = 96;
+      newSettings.presetId = 'tatami_standard';
+      newSettings.stitchPlanningMode = 'object-aware';
+      newSettings.threadThickness = 4.8;
+      newSettings.stitchDensity = 6.8;
+      newSettings.stitchLength = 4.8;
+      newSettings.threadTwist = 5.5;
+      newSettings.borderType = 'satin';
+      newSettings.borderThickness = Math.max(4, Math.min(8, maxDistance * 0.35));
+      newSettings.embroideryDepth = 5.5;
+      newSettings.ambientOcclusion = 5.5;
+      newSettings.specularStrength = 7.2;
+      decisions.push(`Detected multi-color mascot illustration (${uniqueColorBuckets.size} colors) -> Activated seamless AI Object-Aware with tight 6.8 commercial density, 4.8mm Tatami brick-weave, and 5.5 silky twist.`);
+    } else if (isGoldMetallic) {
       designType = 'metallic_emblem';
       designTypeLabel = 'Metallic Gold Thread';
       confidence = 96;
       newSettings.presetId = 'gold_metallic';
-      newSettings.specularStrength = 9.5;
-      newSettings.threadTwist = 8.5;
-      newSettings.embroideryDepth = 6.5;
+      newSettings.specularStrength = 8.8;
+      newSettings.threadTwist = 6.2;
+      newSettings.embroideryDepth = 6.0;
       newSettings.colorMode = 'original';
       newSettings.borderType = 'satin';
       newSettings.borderThickness = Math.max(3, Math.min(10, maxDistance * 0.4));
-      decisions.push('Detected prominent gold/warm hues -> Configured high-luster 24K metallic thread profile.');
+      decisions.push('Detected prominent gold/warm hues -> Configured high-luster metallic thread profile.');
     } else if (isFineDetail) {
       designType = 'fine_detail';
       designTypeLabel = 'Fine Detail / Line-Art';
@@ -220,7 +238,7 @@ export class SmartOptimizer {
       newSettings.presetId = 'micro_detail';
       newSettings.threadThickness = 3.2;
       newSettings.stitchDensity = 8.0;
-      newSettings.stitchLength = 4.5;
+      newSettings.stitchLength = 4.0;
       newSettings.stitchJitter = 1.0;
       newSettings.borderType = 'running';
       newSettings.borderThickness = 2.5;
@@ -232,16 +250,16 @@ export class SmartOptimizer {
       designTypeLabel = '3D Structured Patch';
       confidence = 95;
       newSettings.presetId = 'puff_cap_3d';
-      newSettings.threadThickness = 6.5;
+      newSettings.threadThickness = 6.0;
       newSettings.stitchDensity = 7.0;
-      newSettings.stitchLength = 10.0;
+      newSettings.stitchLength = 5.5;
       newSettings.borderType = 'satin';
       newSettings.borderThickness = Math.max(6, Math.min(12, maxDistance * 0.5));
-      newSettings.embroideryDepth = 8.5;
-      newSettings.ambientOcclusion = 7.5;
+      newSettings.embroideryDepth = 7.5;
+      newSettings.ambientOcclusion = 6.5;
       newSettings.shadowStrength = 7.0;
       newSettings.specularStrength = 7.5;
-      decisions.push(`Detected heavy solid fill (${Math.round(fillCoverageRatio * 100)}% coverage) -> Enabled 3D puff relief (8.5) and thick satin border.`);
+      decisions.push(`Detected heavy solid fill (${Math.round(fillCoverageRatio * 100)}% coverage) -> Enabled 3D puff relief (7.5) and thick satin border.`);
     } else if (isTypography) {
       designType = 'fine_typography';
       designTypeLabel = 'Typography Wordmark';
@@ -249,27 +267,103 @@ export class SmartOptimizer {
       newSettings.presetId = 'satin_crest';
       newSettings.threadThickness = 4.8;
       newSettings.stitchDensity = 6.5;
-      newSettings.stitchLength = 7.5;
+      newSettings.stitchLength = 4.8;
       newSettings.borderType = 'satin';
       newSettings.borderThickness = 4.5;
-      newSettings.embroideryDepth = 6.0;
-      newSettings.ambientOcclusion = 6.5;
+      newSettings.embroideryDepth = 5.5;
+      newSettings.ambientOcclusion = 6.0;
       newSettings.specularStrength = 7.0;
-      decisions.push(`Detected typography wordmark layout -> Optimized satin contour and 6.0 depth relief.`);
+      decisions.push(`Detected typography wordmark layout -> Optimized satin contour and 5.5 depth relief.`);
     } else {
       designType = 'standard_logo';
       designTypeLabel = 'Commercial Tatami Emblem';
       confidence = 90;
       newSettings.presetId = 'tatami_standard';
       newSettings.threadThickness = 5.0;
-      newSettings.stitchDensity = 5.5;
-      newSettings.stitchLength = 8.0;
+      newSettings.stitchDensity = 6.0;
+      newSettings.stitchLength = 4.5;
       newSettings.borderType = 'satin';
       newSettings.borderThickness = 5.0;
-      newSettings.embroideryDepth = 5.5;
-      newSettings.ambientOcclusion = 6.0;
+      newSettings.embroideryDepth = 5.0;
+      newSettings.ambientOcclusion = 5.5;
       newSettings.specularStrength = 6.5;
       decisions.push('Balanced commercial logo profile applied with classic 45° Tatami fill.');
+    }
+
+    if (newSettings.stitchPlanningMode === 'thread-studio') {
+      if (isDetailedMascot || isFineDetail) {
+        newSettings.threadStudio = {
+          preset: 'realistic',
+          threadWidth: 1.7,
+          spacing: 2.0,
+          stitchLen: 7.5,
+          fillAngle: 16,
+          bandSize: 15,
+          edgeWidth: 1.6,
+          edgeDensity: 42,
+          roughness: 4,
+          shine: 40,
+          depth: 3.8,
+          drawOutline: false,
+          drawFuzz: false,
+          drawEdge: true
+        };
+        decisions.push('Thread Studio: Fine multi-color artwork detected -> Realistic preset with micro-thread detail.');
+      } else if (isSolidCrest) {
+        newSettings.threadStudio = {
+          preset: 'puff',
+          threadWidth: 3.0,
+          spacing: 2.4,
+          stitchLen: 14.0,
+          fillAngle: 10,
+          bandSize: 18,
+          edgeWidth: 6.0,
+          edgeDensity: 72,
+          roughness: 7,
+          shine: 54,
+          depth: 7.0,
+          drawOutline: false,
+          drawFuzz: false,
+          drawEdge: true
+        };
+        decisions.push('Thread Studio: Large solid shape detected -> Raised Puff 3D preset with deep relief.');
+      } else if (isTypography) {
+        newSettings.threadStudio = {
+          preset: 'satin',
+          threadWidth: 2.0,
+          spacing: 1.9,
+          stitchLen: 10.5,
+          fillAngle: 0,
+          bandSize: 15,
+          edgeWidth: 2.8,
+          edgeDensity: 60,
+          roughness: 5,
+          shine: 48,
+          depth: 4.5,
+          drawOutline: false,
+          drawFuzz: false,
+          drawEdge: true
+        };
+        decisions.push('Thread Studio: Lettering / wordmark detected -> Dense Satin preset with smooth sheen.');
+      } else {
+        newSettings.threadStudio = {
+          preset: 'cleanLogo',
+          threadWidth: 1.9,
+          spacing: 2.2,
+          stitchLen: 8.2,
+          fillAngle: 18,
+          bandSize: 16,
+          edgeWidth: 2.0,
+          edgeDensity: 46,
+          roughness: 6,
+          shine: 44,
+          depth: 4.0,
+          drawOutline: false,
+          drawFuzz: false,
+          drawEdge: true
+        };
+        decisions.push('Thread Studio: Commercial badge detected -> Clean Logo preset with balanced brick-weave Tatami.');
+      }
     }
 
     let dominantHue = 'Multi-color';
@@ -296,7 +390,7 @@ export class SmartOptimizer {
     const distanceMap = new Float32Array(total);
 
     for (let i = 0; i < total; i++) {
-      distanceMap[i] = pixels[i * 4 + 3] > 25 ? 9999 : 0;
+      distanceMap[i] = pixels[i * 4 + 3] >= 40 ? 9999 : 0;
     }
 
     for (let y = 1; y < height - 1; y++) {

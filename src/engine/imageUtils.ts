@@ -11,6 +11,86 @@ export interface BackgroundKnockoutResult {
 }
 
 /**
+ * Remove a near-white or near-black backdrop directly from a pixel buffer.
+ *
+ * This is deliberately edge-connected: white details enclosed by the artwork
+ * (stars, highlights, lettering) remain intact, while a JPEG/PNG artboard
+ * around the design becomes transparent.  It is renderer-safe, so it works in
+ * both the main window and the OffscreenCanvas worker.
+ */
+export function knockoutNeutralEdgeBackground(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  tolerance = 42
+): number {
+  if (width < 2 || height < 2) return 0;
+
+  const cornerPixels = [
+    0,
+    width - 1,
+    (height - 1) * width,
+    height * width - 1
+  ];
+  const samples = cornerPixels.map((pixel) => {
+    const i = pixel * 4;
+    return { r: data[i], g: data[i + 1], b: data[i + 2], a: data[i + 3] };
+  });
+  if (samples.some(s => s.a < 245)) return 0;
+
+  const bg = samples.reduce((sum, sample) => ({
+    r: sum.r + sample.r / samples.length,
+    g: sum.g + sample.g / samples.length,
+    b: sum.b + sample.b / samples.length
+  }), { r: 0, g: 0, b: 0 });
+  const channelSpread = Math.max(bg.r, bg.g, bg.b) - Math.min(bg.r, bg.g, bg.b);
+  const brightness = (bg.r + bg.g + bg.b) / 3;
+  // Avoid unexpectedly cutting a coloured product photo. Flat white/black
+  // artboards are the common accidental embroidery background.
+  if (channelSpread > 22 || (brightness > 48 && brightness < 207)) return 0;
+
+  const toleranceSq = tolerance * tolerance * 3;
+  const visited = new Uint8Array(width * height);
+  const queue = new Int32Array(width * height);
+  let tail = 0;
+  const enqueue = (pixel: number) => {
+    if (visited[pixel]) return;
+    visited[pixel] = 1;
+    queue[tail++] = pixel;
+  };
+  for (let x = 0; x < width; x++) {
+    enqueue(x);
+    enqueue((height - 1) * width + x);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    enqueue(y * width);
+    enqueue(y * width + width - 1);
+  }
+
+  let removed = 0;
+  for (let head = 0; head < tail; head++) {
+    const pixel = queue[head];
+    const index = pixel * 4;
+    const dr = data[index] - bg.r;
+    const dg = data[index + 1] - bg.g;
+    const db = data[index + 2] - bg.b;
+    const distanceSq = dr * dr + dg * dg + db * db;
+    if (distanceSq > toleranceSq) continue;
+
+    const ratio = Math.sqrt(distanceSq / toleranceSq);
+    data[index + 3] = ratio < 0.72 ? 0 : Math.round(255 * (ratio - 0.72) / 0.28);
+    removed++;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    if (x > 0) enqueue(pixel - 1);
+    if (x + 1 < width) enqueue(pixel + 1);
+    if (y > 0) enqueue(pixel - width);
+    if (y + 1 < height) enqueue(pixel + width);
+  }
+  return removed;
+}
+
+/**
  * Automatically detects and removes solid/plain background from raster images (JPG/PNG)
  * Uses 4-corner multi-seed flood fill with perceptual Euclidean color distance and edge antialiasing.
  */

@@ -15,6 +15,9 @@ export interface ObjectStitchFlow {
   longCoordinate: Float32Array;
   /** Approximate inward distance from the current object's boundary. */
   boundaryDistance: Float32Array;
+  /** Per-object uniform principal stitch orientation */
+  baseX: Float32Array;
+  baseY: Float32Array;
 }
 
 const MAX_FLOW_DIMENSION = 512;
@@ -78,10 +81,16 @@ export const computeObjectStitchFlow = (
   const baseY = new Float32Array(maximumLabel + 1);
   const baseConfidence = new Float32Array(maximumLabel + 1);
   for (const object of segmentation.objects) {
-    // A satin/fill column crosses an elongated object's long axis.
-    const radians = ((object.directionDegrees + 90) * Math.PI) / 180;
-    baseX[object.id] = Math.cos(radians);
-    baseY[object.id] = Math.sin(radians);
+    if (object.directionConfidence >= 0.35) {
+      // Confident directional object (leaf, ribbon, letter stem): stitch crosses the long axis
+      const radians = ((object.directionDegrees + 90) * Math.PI) / 180;
+      baseX[object.id] = Math.cos(radians);
+      baseY[object.id] = Math.sin(radians);
+    } else {
+      // Round or broad shape (cup body, coffee puddle, saucer): leave as 0 to inherit master stitchAngle
+      baseX[object.id] = 0;
+      baseY[object.id] = 0;
+    }
     baseConfidence[object.id] = clamp01(object.directionConfidence);
   }
 
@@ -152,6 +161,27 @@ export const computeObjectStitchFlow = (
     }
   }
 
+  const maxDist = new Float32Array(maximumLabel + 1);
+  for (let index = 0; index < total; index++) {
+    const label = labels[index];
+    if (label > 0 && boundaryDistance[index] < INF && boundaryDistance[index] > maxDist[label]) {
+      maxDist[label] = boundaryDistance[index];
+    }
+  }
+
+  const isNarrowColumn = new Uint8Array(maximumLabel + 1);
+  const isCompactDot = new Uint8Array(maximumLabel + 1);
+  for (let label = 1; label <= maximumLabel; label++) {
+    const areaShare = area[label] / Math.max(1, total);
+    // Narrow columns (ribbons, handles, text, thin borders) have small maximum inward depth
+    // and high direction confidence.
+    if (baseConfidence[label] >= 0.35 && (maxDist[label] <= 10 || areaShare < 0.03)) {
+      isNarrowColumn[label] = 1;
+    } else if (baseConfidence[label] < 0.34 && areaShare <= 0.06) {
+      isCompactDot[label] = 1;
+    }
+  }
+
   let doubleX = new Float32Array(total);
   let doubleY = new Float32Array(total);
   const rawConfidence = new Float32Array(total);
@@ -191,47 +221,50 @@ export const computeObjectStitchFlow = (
         distanceAt(x + 1, y - 1, label);
       const gradientLength = Math.hypot(dx, dy);
 
-      let shapeX: number;
-      let shapeY: number;
-      let shapeConfidence: number;
-      const areaShare = area[label] / Math.max(1, total);
-      const largeAmbiguousObject = baseConfidence[label] < 0.28 && areaShare > 0.05;
-      if (gradientLength > 0.08) {
-        shapeX = dx / gradientLength;
-        shapeY = dy / gradientLength;
-        shapeConfidence = largeAmbiguousObject
-          ? clamp01(0.18 + gradientLength * 0.025)
-          : clamp01(0.45 + gradientLength * 0.08);
-      } else {
+      let shapeX = referenceX;
+      let shapeY = referenceY;
+      let shapeConfidence = 0.85;
+
+      if (isNarrowColumn[label]) {
+        // Narrow columnar strokes (satin): flow across the column
+        if (gradientLength > 0.08) {
+          shapeX = dx / gradientLength;
+          shapeY = dy / gradientLength;
+          shapeConfidence = clamp01(0.48 + gradientLength * 0.08);
+        }
+        const aligned = alignDirection(shapeX, shapeY, referenceX, referenceY);
+        const shapeAngle = Math.atan2(aligned.y, aligned.x);
+        const baseAngle = Math.atan2(referenceY, referenceX);
+        const shapeWeight = 0.72 + (1 - baseConfidence[label]) * 0.16;
+        const principalWeight = 0.12 + baseConfidence[label] * 0.22;
+        doubleX[index] =
+          Math.cos(shapeAngle * 2) * shapeWeight +
+          Math.cos(baseAngle * 2) * principalWeight;
+        doubleY[index] =
+          Math.sin(shapeAngle * 2) * shapeWeight +
+          Math.sin(baseAngle * 2) * principalWeight;
+      } else if (isCompactDot[label]) {
+        // Small compact dots / berries: gentle radial flow from center
         const radialX = x - centroidX[label];
         const radialY = y - centroidY[label];
         const radialLength = Math.hypot(radialX, radialY);
-        if (baseConfidence[label] < 0.34 && areaShare <= 0.05 && radialLength > 0.5) {
+        if (radialLength > 0.5) {
           shapeX = radialX / radialLength;
           shapeY = radialY / radialLength;
-          shapeConfidence = 0.48;
-        } else {
-          shapeX = referenceX;
-          shapeY = referenceY;
-          shapeConfidence = 0.38;
+          shapeConfidence = 0.52;
         }
+        const aligned = alignDirection(shapeX, shapeY, referenceX, referenceY);
+        const shapeAngle = Math.atan2(aligned.y, aligned.x);
+        doubleX[index] = Math.cos(shapeAngle * 2);
+        doubleY[index] = Math.sin(shapeAngle * 2);
+      } else {
+        // Broad fill areas (Tatami): MUST maintain clean, straight, parallel linear stitches!
+        // No fingerprint whorls, no radial swirls, no contour distortion.
+        const baseAngle = Math.atan2(referenceY, referenceX);
+        doubleX[index] = Math.cos(baseAngle * 2);
+        doubleY[index] = Math.sin(baseAngle * 2);
+        shapeConfidence = 0.92;
       }
-
-      const aligned = alignDirection(shapeX, shapeY, referenceX, referenceY);
-      const shapeAngle = Math.atan2(aligned.y, aligned.x);
-      const baseAngle = Math.atan2(referenceY, referenceX);
-      const shapeWeight = largeAmbiguousObject
-        ? 0.24
-        : 0.72 + (1 - baseConfidence[label]) * 0.16;
-      const principalWeight = largeAmbiguousObject
-        ? 0.42
-        : 0.12 + baseConfidence[label] * 0.22;
-      doubleX[index] =
-        Math.cos(shapeAngle * 2) * shapeWeight +
-        Math.cos(baseAngle * 2) * principalWeight;
-      doubleY[index] =
-        Math.sin(shapeAngle * 2) * shapeWeight +
-        Math.sin(baseAngle * 2) * principalWeight;
       rawConfidence[index] = shapeConfidence;
     }
   }
@@ -290,86 +323,20 @@ export const computeObjectStitchFlow = (
     confidence[index] = clamp01(0.16 + rawConfidence[index] * 0.42 + strength * 0.3);
   }
 
-  // Integrate the desired tangent/perpendicular gradients into continuous
-  // scalar coordinates. Using x·direction independently at every pixel creates
-  // phase jumps whenever the field turns; the Poisson relaxation below finds
-  // the closest smooth coordinates to the full curved vector field.
+  // Direct linear coordinate projection along the vector flow orientation.
+  // Produces clean, straight, parallel stitch lines for each object without
+  // non-linear Poisson curl, saddle surfaces, or fingerprint whorls.
   let rowCoordinate = new Float32Array(total);
   let longCoordinate = new Float32Array(total);
-  const anchorIndex = new Int32Array(maximumLabel + 1);
-  const anchorDistance = new Float32Array(maximumLabel + 1);
-  anchorIndex.fill(-1);
-  anchorDistance.fill(INF);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const index = y * width + x;
       const label = labels[index];
       if (label === 0) continue;
-      const offsetX = x - centroidX[label];
-      const offsetY = y - centroidY[label];
-      rowCoordinate[index] = offsetX * -baseY[label] + offsetY * baseX[label];
-      longCoordinate[index] = offsetX * baseX[label] + offsetY * baseY[label];
-      const centroidDistance = offsetX * offsetX + offsetY * offsetY;
-      if (centroidDistance < anchorDistance[label]) {
-        anchorDistance[label] = centroidDistance;
-        anchorIndex[label] = index;
-      }
+      rowCoordinate[index] = x * -tangentY[index] + y * tangentX[index];
+      longCoordinate[index] = x * tangentX[index] + y * tangentY[index];
     }
-  }
-
-  for (let pass = 0; pass < INTEGRATION_PASSES; pass++) {
-    const nextRow = new Float32Array(rowCoordinate);
-    const nextLong = new Float32Array(longCoordinate);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const index = y * width + x;
-        const label = labels[index];
-        if (label === 0 || anchorIndex[label] === index) continue;
-
-        const left = x > 0 && labels[index - 1] === label ? index - 1 : index;
-        const right = x + 1 < width && labels[index + 1] === label ? index + 1 : index;
-        const up = y > 0 && labels[index - width] === label ? index - width : index;
-        const down = y + 1 < height && labels[index + width] === label ? index + width : index;
-        let neighborCount = 0;
-        let rowSum = 0;
-        let longSum = 0;
-        if (left !== index) {
-          neighborCount++;
-          rowSum += rowCoordinate[left];
-          longSum += longCoordinate[left];
-        }
-        if (right !== index) {
-          neighborCount++;
-          rowSum += rowCoordinate[right];
-          longSum += longCoordinate[right];
-        }
-        if (up !== index) {
-          neighborCount++;
-          rowSum += rowCoordinate[up];
-          longSum += longCoordinate[up];
-        }
-        if (down !== index) {
-          neighborCount++;
-          rowSum += rowCoordinate[down];
-          longSum += longCoordinate[down];
-        }
-        if (neighborCount < 2) continue;
-
-        const rowDivergence =
-          ((-tangentY[right]) - (-tangentY[left])) * 0.5 +
-          (tangentX[down] - tangentX[up]) * 0.5;
-        const longDivergence =
-          (tangentX[right] - tangentX[left]) * 0.5 +
-          (tangentY[down] - tangentY[up]) * 0.5;
-        const solvedRow = (rowSum - rowDivergence) / neighborCount;
-        const solvedLong = (longSum - longDivergence) / neighborCount;
-        nextRow[index] = rowCoordinate[index] * 0.28 + solvedRow * 0.72;
-        nextLong[index] = longCoordinate[index] * 0.28 + solvedLong * 0.72;
-      }
-    }
-    rowCoordinate = nextRow;
-    longCoordinate = nextLong;
   }
 
   const result: ObjectStitchFlow = {
@@ -383,7 +350,9 @@ export const computeObjectStitchFlow = (
     centroidY,
     rowCoordinate,
     longCoordinate,
-    boundaryDistance
+    boundaryDistance,
+    baseX,
+    baseY
   };
   objectFlowCache.set(segmentation, result);
   return result;

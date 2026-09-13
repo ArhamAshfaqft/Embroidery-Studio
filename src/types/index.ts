@@ -8,7 +8,37 @@ export type ColorMode = 'original' | 'monochrome' | 'palette';
 
 export type EmbroideryRenderStyle = 'classic' | 'natural';
 
-export type StitchPlanningMode = 'surface' | 'object-aware';
+export type StitchPlanningMode = 'thread-studio' | 'surface' | 'object-aware';
+
+export type ThreadStudioPresetId = 'cleanLogo' | 'realistic' | 'satin' | 'puff';
+
+export interface ThreadStudioConfig {
+  preset?: ThreadStudioPresetId;
+  lightAngle?: number;   // 0 to 360 deg (default 225)
+  lightHeight?: number;  // 20 to 85 deg (default 48)
+  threadWidth: number;   // 1.1 to 6.5 px (default 2.0)
+  spacing: number;       // 1.5 to 9.5 px (default 2.2)
+  stitchLen: number;     // 4.0 to 30.0 px (default 8.5)
+  fillAngle: number;     // -90 to 90 deg (default 18)
+  bandSize?: number;     // 10 to 70 px (default 18)
+  edgeWidth: number;     // 0 to 14 px (default 2.2)
+  edgeDensity: number;   // 25 to 100 % (default 50)
+  shine: number;         // 0 to 100 % (default 46)
+  roughness: number;     // 0 to 100 % (default 8)
+  depth?: number;        // 0 to 16 px (default 4.0)
+  drawEdge: boolean;     // default true
+  drawOutline: boolean;  // default false
+  drawFuzz: boolean;     // default false
+}
+
+export type FabricSubstrateType =
+  | 'none'
+  | 'black_leather'
+  | 'indigo_denim'
+  | 'olive_sweatshirt'
+  | 'heather_grey'
+  | 'canvas_patch'
+  | 'vintage_linen';
 
 export interface EmbroiderySettings {
   // Preset identifier
@@ -17,6 +47,7 @@ export interface EmbroiderySettings {
   // Rendering engine
   renderStyle: EmbroideryRenderStyle;
   stitchPlanningMode: StitchPlanningMode;
+  threadStudio?: ThreadStudioConfig;
 
   // Physical design size used by the object-aware planner
   designWidthMm: number;
@@ -45,6 +76,10 @@ export interface EmbroiderySettings {
   shadowStrength: number; // 0 to 10
   shadowBlur: number; // 0 to 20 px
   shadowDistance: number; // 0 to 20 px
+
+  // Fabric Substrate & Backing
+  fabricSubstrate?: FabricSubstrateType;
+  fabricColor?: string;
 
   // Color & Palette
   colorMode: ColorMode;
@@ -92,12 +127,14 @@ export interface MockupTransform {
   blendMode: 'normal' | 'multiply' | 'overlay' | 'hard-light';
   displacementStrength: number;
   shadowIntensity: number;
+  fabricTextureStrength?: number;
+  creviceShadowStrength?: number;
 }
 
 export interface MockupTemplate {
   id: string;
   name: string;
-  category: 'shirt' | 'sweatshirt' | 'hat' | 'tote';
+  category: 'shirt' | 'sweatshirt' | 'hat' | 'tote' | 'jacket' | 'bag' | 'other' | string;
   imageUrl: string;
   width: number;
   height: number;
@@ -108,6 +145,17 @@ export interface MockupTemplate {
     width: number;
     height: number;
   };
+  filename?: string;
+  isCustom?: boolean;
+}
+
+export interface DiskMockupFile {
+  filename: string;
+  name: string;
+  category: string;
+  url: string;
+  mtime: number;
+  size: number;
 }
 
 export interface ThreadColor {
@@ -146,4 +194,16 @@ export interface HistoryStep {
   settings: EmbroiderySettings;
   transform: MockupTransform;
   timestamp: number;
+}
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      listMockupFiles?: () => Promise<DiskMockupFile[]>;
+      openMockupsFolder?: () => Promise<boolean>;
+      onMockupsChanged?: (callback: (files: DiskMockupFile[]) => void) => () => void;
+      saveUserSettings?: (data: unknown) => Promise<boolean>;
+      loadUserSettings?: () => Promise<unknown>;
+    };
+  }
 }

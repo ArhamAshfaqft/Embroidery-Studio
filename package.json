@@ -1,7 +1,7 @@
 {
   "name": "embroidery-studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.1",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -9,7 +9,57 @@
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron electron/main.cjs\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "tsx test/engine.test.ts"
+    "test": "tsx test/engine.test.ts",
+    "dist": "npm run build && electron-builder --win",
+    "dist:portable": "npm run build && electron-builder --win portable",
+    "dist:installer": "npm run build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.ravenlabs.embroideryvisualizer",
+    "productName": "Embroidery Visualizer & Studio",
+    "copyright": "Copyright © 2026 Raven Labs",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "public/mockups",
+        "to": "public/mockups"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/EV-logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Embroidery Studio",
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName} Portable ${version}.${ext}"
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -19,6 +69,7 @@
     "autoprefixer": "^10.5.4",
     "concurrently": "^10.0.5",
     "electron": "^44.1.0",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",

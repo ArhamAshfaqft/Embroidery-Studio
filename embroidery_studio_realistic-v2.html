@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Thread Studio — Embroidery Renderer</title>
+<style>
+  :root{
+    --bg:#0f1318;
+    --panel:#171c22;
+    --line:#2c343d;
+    --text:#eef3f8;
+    --muted:#9eabb7;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font:14px/1.45 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    overflow:hidden;
+  }
+  .app{
+    height:100vh;
+    display:grid;
+    grid-template-columns:295px 1fr 335px;
+    grid-template-rows:60px 1fr;
+  }
+  header{
+    grid-column:1/-1;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 18px;
+    background:#12171d;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    font-weight:700;
+  }
+  .mark{
+    width:34px;height:34px;border-radius:10px;
+    background:#20262e;border:1px solid #394450;position:relative;
+  }
+  .mark:before{
+    content:"";
+    position:absolute;inset:8px;border-radius:50%;
+    border:2px solid #eef3f8;
+  }
+  .mark:after{
+    content:"";
+    position:absolute;
+    width:8px;height:8px;border-radius:50%;
+    background:#eef3f8;
+    left:50%;top:50%;transform:translate(-50%,-50%);
+  }
+  .actions{display:flex;gap:8px}
+  button,.btn{
+    border:1px solid var(--line);
+    background:#242c35;color:var(--text);
+    padding:9px 12px;border-radius:9px;font-weight:600;cursor:pointer;
+  }
+  button:hover,.btn:hover{background:#2d3641}
+  .primary{background:#f5f8fb;color:#101317;border-color:#f5f8fb}
+  .primary:hover{background:#fff}
+  aside{
+    padding:16px;
+    overflow:auto;
+    background:var(--panel);
+  }
+  .left{border-right:1px solid var(--line)}
+  .right{border-left:1px solid var(--line)}
+  h3{
+    margin:0 0 10px;
+    font-size:12px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:#d5dde5;
+  }
+  .drop{
+    min-height:165px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;text-align:center;padding:15px;
+    border:1px dashed #4c5866;border-radius:14px;
+    background:#12171d;cursor:pointer;
+  }
+  .drop.drag{border-color:#edf2f7;background:#1b2128}
+  .drop strong{font-size:15px}
+  .drop small{color:var(--muted)}
+  .thumbBox{
+    margin-top:14px;padding:10px;border-radius:11px;
+    border:1px solid var(--line);background:#12171c;display:none;
+  }
+  #thumb{display:block;max-width:100%;margin:auto}
+  .section{margin-top:18px}
+  .presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .preset{
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:10px;
+    background:#20262e;
+    text-align:center;
+    cursor:pointer;
+    font-size:12px;
+    font-weight:600;
+  }
+  .preset.active{background:#2b333d;border-color:#dce4ec}
+  .switchRow{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:10px 0;border-bottom:1px solid #262d36;
+  }
+  input[type="checkbox"]{width:16px;height:16px}
+  .note,.analysisBox{
+    margin-top:16px;padding:11px 12px;border-radius:10px;
+    border:1px solid #313a45;background:#12171d;color:#adb7c2;font-size:12px;
+  }
+  .analysisBox{display:none}
+  .analysisBox strong{color:#eef3f8;display:block;margin-bottom:6px}
+  .analysisBox .profile{
+    display:inline-block;
+    margin-top:6px;
+    padding:4px 8px;
+    border:1px solid #3a4653;
+    border-radius:999px;
+    font-size:11px;
+    color:#dbe4ec;
+    background:#1a2028;
+  }
+  .tip{margin-top:8px;font-size:11px;color:#7f8a96}
+  .control{margin:15px 0}
+  .controlHead{display:flex;justify-content:space-between;gap:8px;margin-bottom:7px}
+  .controlHead span:last-child{color:#b8c2cc;font-variant-numeric:tabular-nums}
+  input[type="range"]{width:100%;accent-color:#dfe5eb}
+  main{
+    position:relative;overflow:hidden;
+    background:radial-gradient(circle at 50% 45%, #202834 0%, #14191f 56%, #0f1216 100%);
+  }
+  .stage{
+    position:absolute;inset:16px;
+    border-radius:14px;border:1px solid #2c343d;
+    overflow:hidden;display:grid;place-items:center;
+    background:#171c22;
+    background-image:
+      linear-gradient(45deg,#1a2027 25%,transparent 25%),
+      linear-gradient(-45deg,#1a2027 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#1a2027 75%),
+      linear-gradient(-45deg,transparent 75%,#1a2027 75%);
+    background-size:22px 22px;
+    background-position:0 0,0 11px,11px -11px,-11px 0;
+  }
+  #preview{
+    max-width:94%;
+    max-height:90%;
+    filter:drop-shadow(0 16px 32px rgba(0,0,0,.38));
+  }
+  .empty{
+    position:absolute;text-align:center;color:#93a0ad;pointer-events:none;
+  }
+  .empty strong{display:block;font-size:16px;color:#dce4ec;margin-bottom:6px}
+  .hud{
+    position:absolute;left:50%;bottom:28px;transform:translateX(-50%);
+    display:flex;gap:8px;padding:7px;border-radius:10px;
+    background:#171c22cc;border:1px solid #39434f;backdrop-filter:blur(8px);
+  }
+  .status{
+    position:absolute;right:26px;top:26px;
+    display:none;
+    padding:8px 10px;border-radius:8px;
+    background:#171c22e0;border:1px solid #39434f;
+    color:#b7c1cb;font-size:12px;
+  }
+  .spinner{
+    width:12px;height:12px;display:inline-block;vertical-align:-2px;margin-right:6px;
+    border-radius:50%;border:2px solid #5f6b79;border-top-color:#eef3f8;
+    animation:spin .8s linear infinite;
+  }
+  .tinyActionRow{
+    display:flex;
+    gap:8px;
+    margin-top:10px;
+  }
+  .tinyActionRow button{flex:1}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .app{grid-template-columns:270px minmax(0,1fr) 290px;grid-template-rows:64px minmax(0,1fr)}
+  .primary{background:#d9b980;border-color:#d9b980}
+  .mark{border-color:#a78958}.mark:after{background:#d9b980}
+  #preview{object-fit:contain;max-width:94%;max-height:90%}
+  button:focus-visible,input:focus-visible,.preset:focus-visible{outline:2px solid #d9b980;outline-offset:3px}
+  @media(max-width:1050px){.app{grid-template-columns:230px minmax(0,1fr)}.right{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;max-height:250px}.app{grid-template-rows:64px minmax(350px,1fr) 250px}header{padding:0 10px}.brand{font-size:12px}.actions{gap:4px}.actions button{padding:8px;font-size:11px}}
+  @media(max-width:650px){body{overflow:auto}.app{height:auto;display:flex;flex-direction:column}header{min-height:100px;flex-wrap:wrap;gap:8px;padding:12px}main{height:480px;order:1}header{order:0}.left{order:2}.right{order:3;max-height:none;grid-template-columns:repeat(2,minmax(0,1fr))}.drop{min-height:90px}.hud{bottom:22px}}
+.stage.macro{display:block;overflow:auto}.stage.macro #preview{max-width:none;max-height:none;width:1800px!important;height:auto!important;margin:35px}.hud{z-index:3}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="mark"></div>
+      Thread Studio
+    </div>
+    <div class="actions">
+      <button id="demoBtn">Try sample</button><button id="resetBtn">Reset</button>
+      <button id="optimizeBtn">Auto Optimize</button>
+      <button id="exportBtn" class="primary">Export Transparent PNG</button>
+    </div>
+  </header>
+
+  <aside class="left">
+    <h3>Artwork</h3>
+    <label class="drop" id="drop">
+      <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+      <strong>Drop logo / art here</strong>
+      <small>Transparent PNG works best</small>
+      <span class="btn">Choose image</span>
+    </label>
+
+    <div class="thumbBox" id="thumbBox">
+      <canvas id="thumb"></canvas>
+    </div>
+
+    <div class="analysisBox" id="analysisBox">
+      <strong>Auto analysis</strong>
+      <div id="analysisText">No image analyzed yet.</div>
+      <div class="profile" id="analysisProfile">—</div>
+    </div>
+
+    <div class="section">
+      <h3>Embroidery Presets</h3>
+      <div class="presets" id="presets">
+        <div class="preset active" data-preset="cleanLogo">Clean Logo</div>
+        <div class="preset" data-preset="realistic">Realistic</div>
+        <div class="preset" data-preset="satin">Dense Satin</div>
+        <div class="preset" data-preset="puff">Raised / Puff</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Preview</h3>
+      <div class="switchRow">
+        <span>Auto optimize on upload</span>
+        <input id="autoOptimize" type="checkbox" checked>
+      </div>
+      <div class="switchRow">
+        <span>Show fabric background</span>
+        <input id="showFabric" type="checkbox" checked>
+      </div>
+      <div class="switchRow">
+        <span>Preserve original colors</span>
+        <input id="preserveColors" type="checkbox" checked>
+      </div>
+      <div class="switchRow">
+        <span>Use satin detail stitches</span>
+        <input id="drawEdge" type="checkbox" checked>
+      </div>
+      <div class="switchRow">
+        <span>Use running stitch outline</span>
+        <input id="drawOutline" type="checkbox">
+      </div>
+      <div class="switchRow">
+        <span>Micro edge fibers</span>
+        <input id="drawFuzz" type="checkbox">
+      </div>
+    </div>
+
+    <div class="note">
+      Raised thread surfaces with curved paths, helical fiber relief, directional lighting, and local thread shadows. Inspect threads for a close view. Use flat-color artwork with transparency for the clearest result.
+    </div>
+    <div class="tip">Visual simulation · PNG export · Not a machine stitch file. Opaque image backgrounds are stitched too.</div>
+  </aside>
+
+  <main>
+    <div class="stage">
+      <canvas id="preview"></canvas>
+      <div class="empty" id="empty">
+        <strong>Upload artwork to start</strong>
+        It will be rebuilt as simulated machine embroidery.
+      </div>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="hud">
+      <button id="compareBtn">Hold to Compare</button>
+      <button id="rerenderBtn">Re-render</button><button id="macroBtn">Inspect threads</button>
+    </div>
+  </main>
+
+  <aside class="right">
+    <h3>Thread & lighting controls</h3>
+    <div class="control"><div class="controlHead"><span>Light direction</span><span id="lightAngleVal"></span></div><input id="lightAngle" type="range" min="0" max="360" value="225" step="1"></div>
+    <div class="control"><div class="controlHead"><span>Light elevation</span><span id="lightHeightVal"></span></div><input id="lightHeight" type="range" min="20" max="85" value="48" step="1"></div>
+
+    <div class="control">
+      <div class="controlHead"><span>Thread width</span><span id="threadWidthVal"></span></div>
+      <input id="threadWidth" type="range" min="1.1" max="6.5" step="0.1" value="2.0">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Stitch spacing</span><span id="spacingVal"></span></div>
+      <input id="spacing" type="range" min="1.5" max="9.5" step="0.1" value="2.2">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Stitch length</span><span id="stitchLenVal"></span></div>
+      <input id="stitchLen" type="range" min="4" max="30" step="0.5" value="8.5">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Fill angle</span><span id="fillAngleVal"></span></div>
+      <input id="fillAngle" type="range" min="-90" max="90" step="1" value="18">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Fill stagger period</span><span id="bandSizeVal"></span></div>
+      <input id="bandSize" type="range" min="10" max="70" step="1" value="18">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Satin detail reach</span><span id="edgeWidthVal"></span></div>
+      <input id="edgeWidth" type="range" min="0" max="14" step="0.5" value="2.2">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Thread shine</span><span id="shineVal"></span></div>
+      <input id="shine" type="range" min="0" max="100" step="1" value="46">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Roughness</span><span id="roughnessVal"></span></div>
+      <input id="roughness" type="range" min="0" max="100" step="1" value="8">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Embroidery height</span><span id="depthVal"></span></div>
+      <input id="depth" type="range" min="0" max="16" step="0.5" value="4.0">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Satin fullness</span><span id="edgeDensityVal"></span></div>
+      <input id="edgeDensity" type="range" min="25" max="100" step="1" value="50">
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Display scale</span><span id="scaleVal"></span></div>
+      <input id="scale" type="range" min="55" max="125" step="1" value="94">
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+
+  const preview = $('#preview');
+  let ctx = preview.getContext('2d', { willReadFrequently:true });
+  const thumb = $('#thumb');
+  const thumbCtx = thumb.getContext('2d');
+  const empty = $('#empty');
+  const status = $('#status');
+
+  const autoOptimize = $('#autoOptimize');
+  const showFabric = $('#showFabric');
+  const preserveColors = $('#preserveColors');
+  const drawEdge = $('#drawEdge');
+  const drawOutline = $('#drawOutline');
+  const drawFuzz = $('#drawFuzz');
+
+  const analysisBox = $('#analysisBox');
+  const analysisText = $('#analysisText');
+  const analysisProfile = $('#analysisProfile');
+
+  const controls = {
+    lightAngle: $('#lightAngle'), lightHeight: $('#lightHeight'),
+    threadWidth: $('#threadWidth'),
+    spacing: $('#spacing'),
+    stitchLen: $('#stitchLen'),
+    fillAngle: $('#fillAngle'),
+    bandSize: $('#bandSize'),
+    edgeWidth: $('#edgeWidth'),
+    shine: $('#shine'),
+    roughness: $('#roughness'),
+    depth: $('#depth'),
+    edgeDensity: $('#edgeDensity'),
+    scale: $('#scale')
+  };
+
+  const labels = {
+    lightAngle: $('#lightAngleVal'), lightHeight: $('#lightHeightVal'),
+    threadWidth: $('#threadWidthVal'),
+    spacing: $('#spacingVal'),
+    stitchLen: $('#stitchLenVal'),
+    fillAngle: $('#fillAngleVal'),
+    bandSize: $('#bandSizeVal'),
+    edgeWidth: $('#edgeWidthVal'),
+    shine: $('#shineVal'),
+    roughness: $('#roughnessVal'),
+    depth: $('#depthVal'),
+    edgeDensity: $('#edgeDensityVal'),
+    scale: $('#scaleVal')
+  };
+
+  const presetValues = {
+    cleanLogo:{threadWidth:2.0, spacing:2.2, stitchLen:8.5, fillAngle:18, bandSize:18, edgeWidth:2.2, shine:46, roughness:8, depth:4.0, edgeDensity:50, scale:94, drawOutline:false, drawFuzz:false, drawEdge:true},
+    realistic:{threadWidth:2.6, spacing:3.0, stitchLen:10.5, fillAngle:16, bandSize:24, edgeWidth:4.0, shine:56, roughness:18, depth:5.0, edgeDensity:68, scale:94, drawOutline:true, drawFuzz:true, drawEdge:true},
+    satin:{threadWidth:1.8, spacing:1.8, stitchLen:11.5, fillAngle:0, bandSize:14, edgeWidth:4.8, shine:58, roughness:6, depth:4.4, edgeDensity:72, scale:94, drawOutline:false, drawFuzz:false, drawEdge:true},
+    puff:{threadWidth:3.5, spacing:2.8, stitchLen:15, fillAngle:10, bandSize:18, edgeWidth:8.5, shine:54, roughness:10, depth:8.5, edgeDensity:86, scale:94, drawOutline:false, drawFuzz:false, drawEdge:true}
+  };
+
+  let srcImage = null;
+  let srcCanvas = null;
+  let srcCtx = null;
+  let srcData = null;
+  let renderTimer = null;
+  let renderSeed = 1;
+  const RS = 3;
+  let regions = null, regionIds = null, renderVersion = 0;
+
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function degToRad(d){ return d * Math.PI / 180; }
+  function rgba(r,g,b,a=1){ return `rgba(${r|0},${g|0},${b|0},${a})`; }
+
+  function mulberry32(seed){
+    let t = seed >>> 0;
+    return function(){
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ t >>> 15, 1 | t);
+      r ^= r + Math.imul(r ^ r >>> 7, 61 | r);
+      return ((r ^ r >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function setStatus(text, spin=false){
+    status.style.display = 'block';
+    status.innerHTML = (spin ? '<span class="spinner"></span>' : '') + text;
+  }
+  function hideStatus(){ status.style.display = 'none'; }
+
+  function updateLabels(){
+    labels.lightAngle.textContent=controls.lightAngle.value+'°'; labels.lightHeight.textContent=controls.lightHeight.value+'°';
+    labels.threadWidth.textContent = (+controls.threadWidth.value).toFixed(1) + ' px';
+    labels.spacing.textContent = (+controls.spacing.value).toFixed(1) + ' px';
+    labels.stitchLen.textContent = (+controls.stitchLen.value).toFixed(1) + ' px';
+    labels.fillAngle.textContent = controls.fillAngle.value + '°';
+    labels.bandSize.textContent = controls.bandSize.value + ' px';
+    labels.edgeWidth.textContent = (+controls.edgeWidth.value).toFixed(1) + ' px';
+    labels.shine.textContent = controls.shine.value + '%';
+    labels.roughness.textContent = controls.roughness.value + '%';
+    labels.depth.textContent = (+controls.depth.value).toFixed(1) + ' px';
+    labels.edgeDensity.textContent = controls.edgeDensity.value + '%';
+    labels.scale.textContent = controls.scale.value + '%';
+  }
+  updateLabels();
+
+  function setActivePreset(name){
+    document.querySelectorAll('.preset').forEach(el => el.classList.toggle('active', el.dataset.preset === name));
+  }
+
+  function applySettings(map, syncToggles=true){
+    Object.entries(map).forEach(([k,v]) => {
+      if(k in controls) controls[k].value = v;
+    });
+    if(syncToggles){
+      if('drawOutline' in map) drawOutline.checked = !!map.drawOutline;
+      if('drawFuzz' in map) drawFuzz.checked = !!map.drawFuzz;
+      if('drawEdge' in map) drawEdge.checked = !!map.drawEdge;
+    }
+    updateLabels();
+  }
+
+  function applyPreset(name){
+    applySettings(presetValues[name] || presetValues.cleanLogo);
+    setActivePreset(name);
+    render();
+  }
+
+  function loadFile(file){
+    if(!file) return;
+    const img = new Image();
+    img.onload = () => {
+      srcImage = img;
+      prepareSource();
+      drawThumb();
+      $('#thumbBox').style.display = 'block';
+      empty.style.display = 'none';
+      if(autoOptimize.checked) autoOptimizeArtwork();
+      else {
+        analysisBox.style.display='none';
+        setActivePreset('cleanLogo');
+        applySettings(presetValues.cleanLogo);
+        render();
+      }
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src);setStatus('Could not read this image. Try PNG, JPEG, WebP or SVG.'); };
+    img.src = URL.createObjectURL(file);
+  }
+
+  function prepareSource(){
+    const maxDim = 1000;
+    let w = srcImage.naturalWidth;
+    let h = srcImage.naturalHeight;
+    const s = Math.min(1, maxDim / Math.max(w,h));
+    w = Math.max(1, Math.round(w * s));
+    h = Math.max(1, Math.round(h * s));
+    srcCanvas = document.createElement('canvas');
+    srcCanvas.width = w;
+    srcCanvas.height = h;
+    srcCtx = srcCanvas.getContext('2d', { willReadFrequently:true });
+    srcCtx.clearRect(0,0,w,h);
+    srcCtx.drawImage(srcImage,0,0,w,h);
+    srcData = srcCtx.getImageData(0,0,w,h);
+    buildRegions();
+  }
+
+  function drawThumb(){
+    const max = 220;
+    const s = Math.min(1, max/srcCanvas.width, max/srcCanvas.height);
+    thumb.width = Math.max(1, Math.round(srcCanvas.width * s));
+    thumb.height = Math.max(1, Math.round(srcCanvas.height * s));
+    thumbCtx.clearRect(0,0,thumb.width,thumb.height);
+    thumbCtx.drawImage(srcCanvas, 0, 0, thumb.width, thumb.height);
+  }
+
+  function alphaAtSrc(x,y){
+    if(!srcData) return 0;
+    x = x|0; y = y|0;
+    if(x < 0 || y < 0 || x >= srcData.width || y >= srcData.height) return 0;
+    return srcData.data[(y * srcData.width + x) * 4 + 3];
+  }
+
+  function isInsideSrc(x,y,th=18){ return alphaAtSrc(x,y) > th; }
+
+  function colorAtSrc(x,y){
+    x = clamp(x|0, 0, srcData.width - 1);
+    y = clamp(y|0, 0, srcData.height - 1);
+    const i = (y * srcData.width + x) * 4;
+    let r = srcData.data[i];
+    let g = srcData.data[i+1];
+    let b = srcData.data[i+2];
+    let a = srcData.data[i+3];
+    if(!preserveColors.checked){
+      const l = .2126*r + .7152*g + .0722*b;
+      r = l * 1.04; g = l * 1.00; b = l * 0.92;
+    }
+    return [r,g,b,a];
+  }
+
+  function luminance(r,g,b){ return .2126*r + .7152*g + .0722*b; }
+
+  function isEdgeSrc(x,y){
+    if(!isInsideSrc(x,y,28)) return false;
+    const d = 2;
+    return (
+      alphaAtSrc(x+d,y) < 22 ||
+      alphaAtSrc(x-d,y) < 22 ||
+      alphaAtSrc(x,y+d) < 22 ||
+      alphaAtSrc(x,y-d) < 22
+    );
+  }
+
+  function normalAtSrc(x,y){
+    const gx = alphaAtSrc(x+1,y) - alphaAtSrc(x-1,y);
+    const gy = alphaAtSrc(x,y+1) - alphaAtSrc(x,y-1);
+    let len = Math.hypot(gx,gy);
+    if(len < 1e-4) return {x:0,y:-1};
+    return {x:gx/len, y:gy/len};
+  }
+
+  function analyzeArtwork(){
+    if(!srcData) return null;
+    const step = 2;
+    let filled = 0, edge = 0, lumSum = 0;
+    const colorSet = new Set();
+    let minX = srcData.width, minY = srcData.height, maxX = 0, maxY = 0;
+
+    for(let y=0; y<srcData.height; y+=step){
+      for(let x=0; x<srcData.width; x+=step){
+        const a = alphaAtSrc(x,y);
+        if(a <= 20) continue;
+        filled++;
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+
+        if(isEdgeSrc(x,y)) edge++;
+
+        const [r,g,b] = colorAtSrc(x,y);
+        lumSum += luminance(r,g,b);
+
+        // coarse quantization
+        const qr = Math.floor(r/32), qg = Math.floor(g/32), qb = Math.floor(b/32);
+        colorSet.add(qr + '-' + qg + '-' + qb);
+      }
+    }
+
+    const totalSamples = Math.ceil(srcData.width/step) * Math.ceil(srcData.height/step);
+    const coverage = filled / Math.max(1, totalSamples);
+    const edgeRatio = edge / Math.max(1, filled);
+    const colorCount = colorSet.size;
+    const avgLum = lumSum / Math.max(1, filled);
+
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    const aspect = bboxW / bboxH;
+
+    let profile = 'clean badge / logo';
+    let recommended = 'cleanLogo';
+
+    if(edgeRatio > 0.42 || colorCount > 24){
+      profile = 'detailed artwork';
+      recommended = 'realistic';
+    } else if(edgeRatio > 0.30 || colorCount > 12){
+      profile = 'moderately detailed badge';
+      recommended = 'cleanLogo';
+    } else if(coverage < 0.18 && edgeRatio < 0.25){
+      profile = 'simple icon / emblem';
+      recommended = 'satin';
+    } else if(coverage > 0.45 && edgeRatio < 0.22){
+      profile = 'large solid shape';
+      recommended = 'puff';
+    }
+
+    return { coverage, edgeRatio, colorCount, avgLum, aspect, recommended, profile };
+  }
+
+  function autoOptimizeArtwork(){
+    const info = analyzeArtwork();
+    if(!info) return;
+
+    analysisBox.style.display = 'block';
+    analysisProfile.textContent = info.profile;
+    analysisText.textContent =
+      `Coverage ${(info.coverage*100).toFixed(0)}% · Edge detail ${(info.edgeRatio*100).toFixed(0)}% · Approx colors ${info.colorCount}. ` +
+      `Applied starting preset: ${info.recommended === 'cleanLogo' ? 'Clean Logo' : info.recommended === 'realistic' ? 'Realistic' : info.recommended === 'satin' ? 'Dense Satin' : 'Raised / Puff'}.`;
+
+    let base = {...presetValues[info.recommended]};
+
+    // Fine tuning based on analysis
+    if(info.profile === 'detailed artwork'){
+      base.threadWidth = 1.7;
+      base.spacing = 2.0;
+      base.stitchLen = 7.5;
+      base.bandSize = 15;
+      base.edgeWidth = 1.6;
+      base.edgeDensity = 42;
+      base.roughness = 4;
+      base.shine = 40;
+      base.depth = 3.8;
+      base.drawOutline = false;
+      base.drawFuzz = false;
+      base.drawEdge = true;
+    } else if(info.profile === 'moderately detailed badge'){
+      base.threadWidth = 1.9;
+      base.spacing = 2.2;
+      base.stitchLen = 8.2;
+      base.bandSize = 16;
+      base.edgeWidth = 2.0;
+      base.edgeDensity = 46;
+      base.roughness = 6;
+      base.shine = 44;
+      base.depth = 4.0;
+      base.drawOutline = false;
+      base.drawFuzz = false;
+      base.drawEdge = true;
+    } else if(info.profile === 'simple icon / emblem'){
+      base.threadWidth = 2.0;
+      base.spacing = 1.9;
+      base.stitchLen = 10.5;
+      base.bandSize = 15;
+      base.edgeWidth = 2.8;
+      base.edgeDensity = 60;
+      base.roughness = 5;
+      base.shine = 48;
+      base.depth = 4.5;
+      base.drawOutline = false;
+      base.drawFuzz = false;
+      base.drawEdge = true;
+    } else if(info.profile === 'large solid shape'){
+      base.threadWidth = 3.0;
+      base.spacing = 2.4;
+      base.stitchLen = 14;
+      base.bandSize = 18;
+      base.edgeWidth = 6;
+      base.edgeDensity = 72;
+      base.roughness = 7;
+      base.shine = 54;
+      base.depth = 7;
+      base.drawOutline = false;
+      base.drawFuzz = false;
+      base.drawEdge = true;
+    }
+
+    applySettings(base);
+    setActivePreset(info.recommended);
+    render();
+  }
+
+  function drawFabric(w,h){
+    ctx.fillStyle='#555b48';ctx.fillRect(0,0,w,h);
+    const tile=document.createElement('canvas');tile.width=tile.height=24;
+    const t=tile.getContext('2d');t.fillStyle='#555b48';t.fillRect(0,0,24,24);
+    for(let y=0;y<24;y+=6)for(let x=0;x<24;x+=6){
+      const vertical=((x+y)/6)%2===0;
+      const g=t.createLinearGradient(x,y,x+(vertical?6:0),y+(vertical?0:6));
+      g.addColorStop(0,'#363d30');g.addColorStop(.45,'#72765e');g.addColorStop(1,'#454c3a');
+      t.fillStyle=g;t.fillRect(x+.5,y+.5,vertical?5:6,vertical?6:5);
+    }
+    ctx.fillStyle=ctx.createPattern(tile,'repeat');ctx.fillRect(0,0,w,h);
+    const g=ctx.createRadialGradient(w*.4,h*.3,0,w*.5,h*.5,Math.max(w,h)*.8);
+    g.addColorStop(0,'rgba(255,244,213,.09)');g.addColorStop(1,'rgba(0,0,0,.20)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  }
+
+  function makeScaledMaskCanvas(fillStyle){
+    const c = document.createElement('canvas');
+    c.width = srcCanvas.width * RS;
+    c.height = srcCanvas.height * RS;
+    const cctx = c.getContext('2d');
+    cctx.scale(RS, RS);
+    cctx.drawImage(srcCanvas, 0, 0);
+    cctx.setTransform(1,0,0,1,0,0);
+    cctx.globalCompositeOperation = 'source-in';
+    cctx.fillStyle = fillStyle;
+    cctx.fillRect(0,0,c.width,c.height);
+    return c;
+  }
+
+  function drawEmbossDepth(depth){
+    if(depth <= 0) return;
+    const dark = makeScaledMaskCanvas('rgba(0,0,0,.95)');
+    const light = makeScaledMaskCanvas('rgba(255,255,255,.7)');
+    ctx.save();
+    ctx.globalAlpha = .30;
+    ctx.filter = `blur(${Math.max(1, depth*1.1*RS)}px)`;
+    ctx.drawImage(dark, depth*0.70*RS, depth*0.90*RS);
+    ctx.restore();
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = .05 + (+controls.shine.value/100)*.08;
+    ctx.filter = `blur(${Math.max(.6, depth*0.40*RS)}px)`;
+    ctx.drawImage(light, -depth*0.25*RS, -depth*0.30*RS);
+    ctx.restore();
+  }
+
+  function drawFabricIndent(depth){
+    if(depth <= 0 || !showFabric.checked) return;
+    const mask = makeScaledMaskCanvas('rgba(0,0,0,.9)');
+    ctx.save();
+    ctx.globalAlpha = .08;
+    ctx.filter = `blur(${Math.max(1, depth*0.8*RS)}px)`;
+    ctx.drawImage(mask, depth*0.12*RS, depth*0.15*RS);
+    ctx.restore();
+  }
+
+  function drawUnderlay(angleDeg, opacity=.12){
+    const spacing = +controls.spacing.value * RS;
+    const stitchLen = +controls.stitchLen.value * RS;
+    const threadWidth = +controls.threadWidth.value * RS;
+    const a = degToRad(angleDeg);
+    const step = Math.max(5*RS, spacing * 1.6);
+    const diag = Math.hypot(preview.width, preview.height);
+    const cx = preview.width/2, cy = preview.height/2;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    const rnd = mulberry32(renderSeed + Math.round(angleDeg*10) + 1000);
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.lineCap = 'round';
+    for(let u = -diag; u <= diag; u += step){
+      for(let v = -diag; v <= diag; v += step){
+        const x = cx + u*cos - v*sin;
+        const y = cy + u*sin + v*cos;
+        const sx = x / RS, sy = y / RS;
+        if(!isInsideSrc(sx, sy, 38)) continue;
+        const [r,g,b] = colorAtSrc(sx, sy);
+        const tone = -26 + rnd()*10;
+        const dx = Math.cos(a) * stitchLen * 0.28;
+        const dy = Math.sin(a) * stitchLen * 0.28;
+        ctx.lineWidth = Math.max(1, threadWidth * 0.72);
+        ctx.strokeStyle = rgba(clamp(r+tone,0,255), clamp(g+tone,0,255), clamp(b+tone,0,255), .22);
+        ctx.beginPath(); ctx.moveTo(x-dx, y-dy); ctx.lineTo(x+dx, y+dy); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawTatami(){
+    const threadWidth = +controls.threadWidth.value * RS;
+    const spacing = +controls.spacing.value * RS;
+    const stitchLen = +controls.stitchLen.value * RS;
+    const fillAngle = +controls.fillAngle.value;
+    const bandSize = +controls.bandSize.value * RS;
+    const roughness = +controls.roughness.value / 100;
+    const shine = +controls.shine.value / 100;
+    const diag = Math.hypot(preview.width, preview.height);
+    const cx = preview.width/2, cy = preview.height/2;
+    const baseA = degToRad(fillAngle);
+    const rnd = mulberry32(renderSeed + 2000);
+    const yStep = Math.max(1.3*RS, spacing);
+    const xStep = Math.max(3.6*RS, stitchLen * 0.56);
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for(let gy = -diag; gy <= diag; gy += yStep){
+      const bandIndex = Math.floor((gy + diag) / bandSize);
+      const bandAlt = bandIndex % 2 === 1;
+
+      for(let gx = -diag; gx <= diag; gx += xStep){
+        const localNoise = Math.sin((gx+gy)*0.0042) * 0.12 + Math.cos(gy*0.0065) * 0.08;
+        const angleDeg = fillAngle + (bandAlt ? 90 : 0) + localNoise*18;
+        const a = degToRad(angleDeg);
+        const x = cx + gx*Math.cos(baseA) - gy*Math.sin(baseA) + (rnd()-0.5)*spacing*roughness*0.9;
+        const y = cy + gx*Math.sin(baseA) + gy*Math.cos(baseA) + (rnd()-0.5)*spacing*roughness*0.9;
+        const sx = x / RS, sy = y / RS;
+        if(!isInsideSrc(sx, sy, 34)) continue;
+
+        const [r,g,b,a0] = colorAtSrc(sx, sy);
+        const shade = (rnd()-0.5)*14;
+        const rr = clamp(r+shade,0,255);
+        const gg = clamp(g+shade,0,255);
+        const bb = clamp(b+shade,0,255);
+
+        const localLen = stitchLen * lerp(0.90, 1.06, rnd());
+        const dx = Math.cos(a) * localLen * 0.5;
+        const dy = Math.sin(a) * localLen * 0.5;
+
+        ctx.lineWidth = threadWidth + 0.9*RS;
+        ctx.strokeStyle = rgba(rr*0.54, gg*0.54, bb*0.54, Math.min(.56, a0/255));
+        ctx.beginPath(); ctx.moveTo(x-dx+0.55*RS, y-dy+0.65*RS); ctx.lineTo(x+dx+0.55*RS, y+dy+0.65*RS); ctx.stroke();
+
+        ctx.lineWidth = threadWidth;
+        ctx.strokeStyle = rgba(rr, gg, bb, Math.min(.95, a0/255));
+        ctx.beginPath(); ctx.moveTo(x-dx, y-dy); ctx.lineTo(x+dx, y+dy); ctx.stroke();
+
+        const hiBoost = 24 + shine*42;
+        ctx.lineWidth = Math.max(0.38*RS, threadWidth*0.18);
+        ctx.strokeStyle = rgba(clamp(rr+hiBoost,0,255), clamp(gg+hiBoost,0,255), clamp(bb+hiBoost,0,255), .10 + .18*shine);
+        ctx.beginPath(); ctx.moveTo(x-dx*0.70, y-dy*0.70); ctx.lineTo(x+dx*0.30, y+dy*0.30); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawSatinEdge(){
+    if(!drawEdge.checked) return;
+    const edgeWidth = +controls.edgeWidth.value * RS;
+    if(edgeWidth <= 0.01) return;
+    const roughness = +controls.roughness.value / 100;
+    const shine = +controls.shine.value / 100;
+    const density = +controls.edgeDensity.value / 100;
+    const step = Math.max(2, Math.round((8 - Math.min(edgeWidth/RS, 5)*0.55) * RS));
+    const rnd = mulberry32(renderSeed + 3333);
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for(let y=1; y<preview.height-1; y+=step){
+      for(let x=1; x<preview.width-1; x+=step){
+        const sx = x / RS, sy = y / RS;
+        if(!isEdgeSrc(sx, sy)) continue;
+        if(rnd() > density) continue;
+
+        const n = normalAtSrc(sx, sy);
+        let angle = Math.atan2(n.y, n.x);
+        angle += (rnd()-0.5) * 0.25 * roughness;
+
+        const [r,g,b,a] = colorAtSrc(sx, sy);
+        const shade = (rnd()-0.5) * 10;
+        const rr = clamp(r+shade,0,255);
+        const gg = clamp(g+shade,0,255);
+        const bb = clamp(b+shade,0,255);
+
+        const len = edgeWidth * lerp(1.55, 1.9, rnd());
+        const dx = Math.cos(angle) * len * 0.5;
+        const dy = Math.sin(angle) * len * 0.5;
+
+        ctx.lineWidth = Math.max(0.7*RS, edgeWidth*0.72);
+        ctx.strokeStyle = rgba(rr*0.50, gg*0.50, bb*0.50, .58);
+        ctx.beginPath(); ctx.moveTo(x-dx+0.45*RS, y-dy+0.55*RS); ctx.lineTo(x+dx+0.45*RS, y+dy+0.55*RS); ctx.stroke();
+
+        ctx.lineWidth = Math.max(0.55*RS, edgeWidth*0.50);
+        ctx.strokeStyle = rgba(rr, gg, bb, Math.min(.96, a/255));
+        ctx.beginPath(); ctx.moveTo(x-dx, y-dy); ctx.lineTo(x+dx, y+dy); ctx.stroke();
+
+        ctx.lineWidth = Math.max(0.25*RS, edgeWidth*0.12);
+        ctx.strokeStyle = rgba(clamp(rr+28+shine*26,0,255), clamp(gg+28+shine*26,0,255), clamp(bb+28+shine*26,0,255), .12 + .16*shine);
+        ctx.beginPath(); ctx.moveTo(x-dx*0.70, y-dy*0.70); ctx.lineTo(x+dx*0.26, y+dy*0.26); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawRunningOutline(){
+    if(!drawOutline.checked) return;
+    const rnd = mulberry32(renderSeed + 4444);
+    const step = 4 * RS;
+    const len = 3.8 * RS;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    for(let y=1; y<preview.height-1; y+=step){
+      for(let x=1; x<preview.width-1; x+=step){
+        const sx = x / RS, sy = y / RS;
+        if(!isEdgeSrc(sx, sy)) continue;
+        if(rnd() > 0.70) continue;
+
+        const [r,g,b,a] = colorAtSrc(sx, sy);
+        const lum = luminance(r,g,b);
+        const line = lum < 65 ? [10,10,10] : [Math.max(0,r-65), Math.max(0,g-65), Math.max(0,b-65)];
+
+        const n = normalAtSrc(sx, sy);
+        let t = Math.atan2(n.y, n.x) + Math.PI/2 + (rnd()-0.5)*0.16;
+        const dx = Math.cos(t) * len * 0.5;
+        const dy = Math.sin(t) * len * 0.5;
+
+        ctx.lineWidth = 0.55 * RS;
+        ctx.strokeStyle = rgba(line[0], line[1], line[2], Math.min(.82, a/255));
+        ctx.beginPath(); ctx.moveTo(x-dx, y-dy); ctx.lineTo(x+dx, y+dy); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawMicroFuzz(){
+    if(!drawFuzz.checked) return;
+    const roughness = +controls.roughness.value / 100;
+    const tw = +controls.threadWidth.value * RS;
+    const rnd = mulberry32(renderSeed + 6666);
+    const tries = Math.round((preview.width * preview.height) / (180 * RS) * (0.2 + roughness));
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    for(let i=0;i<tries;i++){
+      const x = (rnd() * preview.width)|0, y = (rnd() * preview.height)|0;
+      const sx = x / RS, sy = y / RS;
+      if(!isEdgeSrc(sx, sy)) continue;
+
+      const [r,g,b] = colorAtSrc(sx, sy);
+      const n = normalAtSrc(sx, sy);
+      let angle = Math.atan2(n.y, n.x) + Math.PI + (rnd()-0.5)*1.2;
+      const len = (0.4 + rnd()*tw*0.5) * (.45 + roughness);
+      ctx.lineWidth = .20*RS + rnd()*.10*RS;
+      ctx.strokeStyle = rgba(clamp(r+25,0,255), clamp(g+25,0,255), clamp(b+25,0,255), .05 + rnd()*.06);
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x + Math.cos(angle)*len, y + Math.sin(angle)*len); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawSurfaceGlow(depth){
+    if(depth <= 0) return;
+    const hi = makeScaledMaskCanvas('rgba(255,255,255,.6)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = .04 + (+controls.shine.value/100)*.08;
+    ctx.filter = `blur(${Math.max(.8, depth*0.32*RS)}px)`;
+    ctx.drawImage(hi, -depth*0.20*RS, -depth*0.25*RS);
+    ctx.restore();
+  }
+
+  // Quantized connected regions retain artwork boundaries and local shape direction.
+  function buildRegions(){
+    const {width:w,height:h,data:d}=srcData, n=w*h;
+    regionIds=new Int32Array(n); regionIds.fill(-1); regions=[];
+    const keys=new Int32Array(n); keys.fill(-1);
+    for(let i=0;i<n;i++) if(d[i*4+3]>28)
+      keys[i]=((d[i*4]>>5)<<6)|((d[i*4+1]>>5)<<3)|(d[i*4+2]>>5);
+    const queue=new Int32Array(n);
+    for(let i=0;i<n;i++){
+      if(keys[i]<0||regionIds[i]>=0)continue;
+      const id=regions.length,key=keys[i];let head=0,tail=1,sx=0,sy=0,xx=0,yy=0,xy=0;
+      queue[0]=i;regionIds[i]=id;
+      while(head<tail){
+        const p=queue[head++],x=p%w,y=(p/w)|0;sx+=x;sy+=y;xx+=x*x;yy+=y*y;xy+=x*y;
+        for(const q of [x>0?p-1:-1,x<w-1?p+1:-1,y>0?p-w:-1,y<h-1?p+w:-1])
+          if(q>=0&&regionIds[q]<0&&keys[q]===key){regionIds[q]=id;queue[tail++]=q;}
+      }
+      const vx=xx/tail-(sx/tail)**2,vy=yy/tail-(sy/tail)**2,cov=xy/tail-sx*sy/tail**2;
+      regions.push({size:tail,angle:0.5*Math.atan2(2*cov,vx-vy),elongation:Math.hypot(vx-vy,2*cov)/(vx+vy+1)});
+    }
+  }
+  function regionAt(x,y){
+    if(x<0||y<0||x>=srcData.width||y>=srcData.height)return -1;
+    return regionIds[Math.floor(y)*srcData.width+Math.floor(x)];
+  }
+  let surface=null;
+  // Rasterize a curved, rounded thread into a depth and material buffer.
+  // Heights are measured in output pixels; surface normals drive the final light pass.
+  function thread(x1,y1,x2,y2,color,width,rnd){
+    x1*=RS;y1*=RS;x2*=RS;y2*=RS;width*=RS;
+    const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);if(len<1)return;
+    const tx=dx/len,ty=dy/len,nx=-ty,ny=tx;
+    const rough=+controls.roughness.value/100;
+    const bend=(rnd()-.5)*width*(.4+rough),phase=rnd()*6.28;
+    const radius=width*.5*(.94+rnd()*.12),tone=.94+rnd()*.12;
+    const {w,h,z,albedo,tangent,coverage}=surface;
+    const minX=Math.max(0,Math.floor(Math.min(x1,x2)-radius-Math.abs(bend)-1));
+    const maxX=Math.min(w-1,Math.ceil(Math.max(x1,x2)+radius+Math.abs(bend)+1));
+    const minY=Math.max(0,Math.floor(Math.min(y1,y2)-radius-Math.abs(bend)-1));
+    const maxY=Math.min(h-1,Math.ceil(Math.max(y1,y2)+radius+Math.abs(bend)+1));
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
+      const px=x+.5-x1,py=y+.5-y1,along=px*tx+py*ty;
+      if(along<-.5||along>len+.5)continue;
+      const t=clamp(along/len,0,1),arch=Math.sin(t*Math.PI);
+      const across=px*nx+py*ny-bend*arch;
+      const taper=.60+.40*Math.min(1,Math.min(t,1-t)*len/(radius*1.4));
+      const r=radius*taper,q=across/r;if(Math.abs(q)>1.2)continue;
+      const aa=clamp((r-Math.abs(across))+.5,0,1);if(!aa)continue;
+      const round=Math.sqrt(Math.max(0,1-Math.min(1,q*q)));
+      // Helical filament grooves wrap around the cylindrical thread surface.
+      const twist=Math.asin(clamp(q,-1,1))*5-along*1.7+phase;
+      const filament=Math.cos(twist),micro=Math.cos(twist*2.9+along*.6);
+      const relief=radius*(round*(.84+.105*filament+.025*micro)+arch*(.18 + +controls.depth.value*.035));
+      const i=y*w+x;if(relief<=z[i])continue;
+      z[i]=relief;tangent[i]=Math.atan2(ty,tx);coverage[i]=Math.round(aa*255);
+      const shade=tone*(.95+.05*filament);
+      for(let c=0;c<3;c++)albedo[i*3+c]=clamp(color[c]*shade,0,255);
+    }
+  }
+  function stitchContour(rnd){
+    if(!drawEdge.checked)return;
+    const w=srcData.width,h=srcData.height,edges=new Map();
+    const add=(x,y,ex,ey)=>{const k=y*(w+1)+x;if(!edges.has(k))edges.set(k,[]);edges.get(k).push([ex,ey]);};
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(isInsideSrc(x,y,100)){
+      if(!isInsideSrc(x,y-1,100))add(x,y,x+1,y);
+      if(!isInsideSrc(x+1,y,100))add(x+1,y,x+1,y+1);
+      if(!isInsideSrc(x,y+1,100))add(x+1,y+1,x,y+1);
+      if(!isInsideSrc(x-1,y,100))add(x,y+1,x,y);
+    }
+    while(edges.size){
+      const first=edges.keys().next().value;let key=first;const points=[];
+      for(let limit=0;limit<w*h*4;limit++){
+        const options=edges.get(key);if(!options)break;
+        points.push([key%(w+1),Math.floor(key/(w+1))]);
+        const next=options.pop();if(!options.length)edges.delete(key);
+        key=next[1]*(w+1)+next[0];if(key===first)break;
+      }
+      if(points.length<12)continue;
+      const stride=Math.max(1,Math.round(+controls.spacing.value*.55));
+      for(let i=0;i<points.length;i+=stride){
+        const p=points[i],before=points[(i-3+points.length)%points.length],after=points[(i+3)%points.length];
+        const dx=after[0]-before[0],dy=after[1]-before[1],len=Math.hypot(dx,dy);if(!len)continue;
+        const nx=-dy/len,ny=dx/len;
+        const id=regionAt(p[0]+nx*1.2,p[1]+ny*1.2);if(id<0)continue;
+        let reach=1.2;const maxReach=3 + +controls.edgeWidth.value*2.4;
+        while(reach<maxReach&&regionAt(p[0]+nx*(reach+.5),p[1]+ny*(reach+.5))===id)reach+=.5;
+        if(reach<1.8)continue;
+        thread(p[0]+nx*.35,p[1]+ny*.35,p[0]+nx*reach,p[1]+ny*reach,
+          colorAtSrc(p[0]+nx*1.2,p[1]+ny*1.2),Math.max(.9,+controls.threadWidth.value*.60),rnd);
+      }
+    }
+  }
+  async function shadeSurface(target,version){
+    const {w,h,z,albedo,tangent,coverage}=surface;
+    const output=target.createImageData(w,h),d=output.data;
+    const az=degToRad(+controls.lightAngle.value),el=degToRad(+controls.lightHeight.value);
+    const lx=Math.cos(az)*Math.cos(el),ly=Math.sin(az)*Math.cos(el),lz=Math.sin(el);
+    const hn=Math.hypot(lx,ly,lz+1),hx=lx/hn,hy=ly/hn,hz=(lz+1)/hn;
+    const shine=+controls.shine.value/100;
+    for(let y=0;y<h;y++){
+      if(y%100===0){await new Promise(r=>setTimeout(r,0));if(version!==renderVersion)return false;}
+      for(let x=0;x<w;x++){
+        const i=y*w+x;if(!coverage[i])continue;
+        let nx=(z[y*w+Math.max(0,x-1)]-z[y*w+Math.min(w-1,x+1)])*.65;
+        let ny=(z[Math.max(0,y-1)*w+x]-z[Math.min(h-1,y+1)*w+x])*.65;
+        const norm=Math.hypot(nx,ny,1);nx/=norm;ny/=norm;const nz=1/norm;
+        const diffuse=Math.max(0,nx*lx+ny*ly+nz*lz);
+        let occlusion=0,shadow=0;
+        for(const step of [2,4,7]){
+          const sx=Math.round(x+lx*step),sy=Math.round(y+ly*step);
+          if(sx>=0&&sy>=0&&sx<w&&sy<h){const dz=z[sy*w+sx]-z[i];if(dz>lz*step+.3)shadow+=.20;occlusion+=Math.max(0,dz)/(step*12);}
+        }
+        const ndh=Math.max(0,nx*hx+ny*hy+nz*hz);
+        const axial=Math.abs(Math.cos(tangent[i])*hx+Math.sin(tangent[i])*hy);
+        const spec=Math.pow(ndh,12+shine*26)*(1-axial*.65)*shine*.8*(1-shadow);
+        const lighting=(.43+diffuse*.76)*(1-shadow)*(1-Math.min(.25,occlusion));
+        for(let c=0;c<3;c++)d[i*4+c]=clamp(albedo[i*3+c]*lighting+spec*(155+albedo[i*3+c]*.25),0,255);
+        d[i*4+3]=coverage[i];
+      }
+    }
+    target.putImageData(output,0,0);return true;
+  }
+  async function render(forceTransparent=false){
+    if(!srcCanvas)return;
+    const version=++renderVersion;
+    setStatus('Laying shape-aware threads…',true);
+    await new Promise(r=>setTimeout(r,16));
+    if(version!==renderVersion)return;
+    const w=srcCanvas.width,h=srcCanvas.height;
+    const layer=document.createElement('canvas');layer.width=w*RS;layer.height=h*RS;
+    const target=layer.getContext('2d');
+    const pixels=layer.width*layer.height;
+    const ownSurface={w:layer.width,h:layer.height,z:new Float32Array(pixels),albedo:new Uint8Array(pixels*3),tangent:new Float32Array(pixels),coverage:new Uint8Array(pixels)};
+    const rnd=mulberry32(renderSeed+2000);
+    // Four direction families approximate each connected shape's principal axis.
+    const base=degToRad(+controls.fillAngle.value);
+    const direction=regions.map(r=>r.elongation>.35?Math.round(((r.angle+Math.PI/2-base+Math.PI*2)%Math.PI)/(Math.PI/4))%4:0);
+    const spacing=Math.max(.85,+controls.spacing.value*.51);
+    const width=Math.max(.95,+controls.threadWidth.value*.62);
+    const stitchLen=+controls.stitchLen.value*1.7;
+    const diag=Math.hypot(w,h);
+    for(let family=0;family<4;family++){
+      const angle=base+family*Math.PI/4,co=Math.cos(angle),si=Math.sin(angle);
+      let row=0;
+      for(let v=-diag/2;v<=diag/2;v+=spacing,row++){
+        if(row%32===0){
+          await new Promise(r=>setTimeout(r,0));
+          if(version!==renderVersion)return;
+        }
+        surface=ownSurface;ctx=target;ctx.setTransform(RS,0,0,RS,0,0);
+        let start=0,last=-1;
+        const flush=(end)=>{
+          if(last<0||direction[last]!==family||end-start<.45)return;
+          const length=end-start;
+          const satin=drawEdge.checked&&length<Math.max(8,+controls.edgeWidth.value*5+10);
+          let u=start+.22;
+          const period=Math.max(2,Math.round(+controls.bandSize.value/5)); const offset=(row%period)/period*stitchLen;
+          while(u<end-.22){
+            let next=satin?end-.22:Math.min(end-.22,start+stitchLen-offset);
+            if(next<=u+.3)next=Math.min(end-.22,u+stitchLen);
+            const x1=w/2+u*co-v*si,y1=h/2+u*si+v*co;
+            const x2=w/2+next*co-v*si,y2=h/2+next*si+v*co;
+            thread(x1,y1,x2,y2,colorAtSrc((x1+x2)/2,(y1+y2)/2),width*(satin?(.85 + +controls.edgeDensity.value/200):1),rnd);
+            u=next+.16;if(satin)break;
+          }
+        };
+        for(let u=-diag/2;u<=diag/2+.5;u+=.5){
+          const id=regionAt(w/2+u*co-v*si,h/2+u*si+v*co);
+          if(id!==last){flush(u-.25);start=u;last=id;}
+        }
+        flush(diag/2);
+      }
+    }
+    if(version!==renderVersion)return;
+    surface=ownSurface;stitchContour(rnd);setStatus('Lighting thread surfaces…',true);
+    if(!await shadeSurface(target,version))return;
+    ctx=target;ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalCompositeOperation='destination-in';ctx.drawImage(srcCanvas,0,0,w*RS,h*RS);ctx.globalCompositeOperation='source-over';
+    preview.width=w*RS;preview.height=h*RS;ctx=preview.getContext('2d');
+    preview.style.width=Math.round(w*+controls.scale.value/100)+'px';
+    preview.style.height=Math.round(h*+controls.scale.value/100)+'px';
+    if(showFabric.checked&&!forceTransparent)drawFabric(preview.width,preview.height);
+    drawEmbossDepth(+controls.depth.value*.55);
+    // A colored underlay keeps dense stitched regions from looking like a wire grid.
+    ctx.save();ctx.globalAlpha=.88;if(!preserveColors.checked)ctx.filter='grayscale(1) sepia(.15)';ctx.drawImage(srcCanvas,0,0,w*RS,h*RS);ctx.restore();
+    ctx.drawImage(layer,0,0);
+    drawRunningOutline();drawMicroFuzz();
+    hideStatus();return true;
+  }
+
+  function queueRender(){
+    updateLabels();
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => render(), 120);
+  }
+
+  Object.values(controls).forEach(el => el.addEventListener('input', queueRender));
+  [showFabric, preserveColors, drawEdge, drawOutline, drawFuzz].forEach(el => {
+    el.addEventListener('change', () => render());
+  });
+
+  $('#presets').addEventListener('click', e => {
+    const p = e.target.closest('.preset');
+    if(!p) return;
+    applyPreset(p.dataset.preset);
+  });
+
+  $('#rerenderBtn').addEventListener('click', () => {
+    renderSeed = Math.floor(Math.random() * 1e9);
+    render();
+  });
+
+  $('#resetBtn').addEventListener('click', () => {
+    applySettings(presetValues.cleanLogo);
+    setActivePreset('cleanLogo');
+    updateLabels();
+    render();
+  });
+
+  $('#optimizeBtn').addEventListener('click', () => {
+    if(!srcCanvas){
+      alert('Please upload artwork first.');
+      return;
+    }
+    autoOptimizeArtwork();
+  });
+
+  function showOriginal(){
+    if(!srcCanvas) return;
+    ctx.clearRect(0,0,preview.width,preview.height);
+    if(showFabric.checked) drawFabric(preview.width, preview.height);
+    ctx.drawImage(srcCanvas, 0, 0, preview.width, preview.height);
+  }
+
+  const compareBtn = $('#compareBtn');
+  compareBtn.addEventListener('mousedown', showOriginal);
+  compareBtn.addEventListener('touchstart', e => { e.preventDefault(); showOriginal(); }, {passive:false});
+  ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev => compareBtn.addEventListener(ev, () => render()));
+
+  $('#exportBtn').addEventListener('click', async () => {
+    if(!srcCanvas){
+      alert('Please upload artwork first.');
+      return;
+    }
+    clearTimeout(renderTimer);
+    const old = showFabric.checked;
+    showFabric.checked = false;
+    if(!await render(true)){showFabric.checked=old;return;}
+    const a = document.createElement('a');
+    a.href = preview.toDataURL('image/png');
+    a.download = 'thread-studio-embroidery.png';
+    a.click();
+    showFabric.checked = old;
+    render();
+  });
+
+  const fileInput = $('#fileInput');
+  const drop = $('#drop');
+  fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if(f) loadFile(f);
+  });
+
+  $('#macroBtn').addEventListener('click',()=>{const on=document.querySelector('.stage').classList.toggle('macro');$('#macroBtn').textContent=on?'Fit artwork':'Inspect threads';});
+  document.querySelectorAll('.control').forEach(el=>{
+    const input=el.querySelector('input');input.setAttribute('aria-label',el.querySelector('span').textContent);
+  });
+  document.querySelectorAll('.switchRow').forEach(el=>el.querySelector('input').setAttribute('aria-label',el.querySelector('span').textContent));
+  document.querySelectorAll('.preset').forEach(el=>{el.tabIndex=0;el.setAttribute('role','button');el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();applyPreset(el.dataset.preset);}});});
+  $('#demoBtn').addEventListener('click',()=>loadFile(new File([`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><g transform="translate(300 285)"><path d="M0-225 180-155 174 85Q130 195 0 240Q-130 195-174 85L-180-155Z" fill="#c9a75d"/><path d="M0-209 165-144 159 80Q119 179 0 223Q-119 179-159 80L-165-144Z" fill="#183e39"/><path d="M-125 70 0-140 125 70Z" fill="#e8dec4"/><path d="M0-140 40-73 15-83-5-55-23-83-47-62Z" fill="#91b6ab"/><path d="m-78 70 78-135 78 135Z" fill="#b47a4c"/><path d="M-130 100Q0 55 130 100L124 129Q0 89-124 129Z" fill="#c9a75d"/><path d="m0 140 6 17 18 1-14 11 5 18-15-10-15 10 5-18-14-11 18-1Z" fill="#e8dec4"/></g></svg>`], 'alpine-badge.svg',{type:'image/svg+xml'})));
+  // initial safe look
+  applySettings(presetValues.cleanLogo);
+  setActivePreset('cleanLogo');
+})();
+</script>
+</body>
+</html>
+

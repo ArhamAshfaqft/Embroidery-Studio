@@ -1,5 +1,6 @@
 import React from 'react';
-import { ToolType, EmbroiderySettings } from '../types';
+import { ToolType, EmbroiderySettings, FabricSubstrateType } from '../types';
+import { FABRIC_SUBSTRATE_DEFINITIONS } from '../engine/fabricSubstrateEngine';
 import {
   Hand,
   ZoomIn,
@@ -115,10 +116,27 @@ export const OptionsBar: React.FC<OptionsBarProps> = ({
       {activeTool === 'hand' && (
         <div className="flex items-center space-x-3 text-[11px] text-neutral-400">
           <span>Click and drag anywhere on viewport to pan camera</span>
-          <span className="text-neutral-600">•</span>
-          <span className="text-neutral-300 font-medium">Tip: You can hold Space from any screen to pan instantly</span>
+          <span className="text-neutral-600 hidden md:inline">•</span>
+          <span className="text-neutral-300 font-medium hidden md:inline">Tip: Hold Space from any screen to pan</span>
         </div>
       )}
+
+      {/* Right-aligned quick Fabric Substrate selector */}
+      <div className="ml-auto flex items-center space-x-1.5 text-[11px]">
+        <span className="text-neutral-400 font-medium hidden sm:inline">Fabric:</span>
+        <select
+          value={settings.fabricSubstrate || 'none'}
+          onChange={(e) => onUpdateSettings({ fabricSubstrate: e.target.value as FabricSubstrateType })}
+          className="bg-[#101014] border border-white/[0.12] rounded px-2 py-0.5 text-neutral-200 text-[11px] hover:border-white/25 focus:outline-none focus:border-white/40 cursor-pointer"
+          title="Select physical material backing (Leather, Denim, Fleece, Patch)"
+        >
+          {FABRIC_SUBSTRATE_DEFINITIONS.map((fab) => (
+            <option key={fab.id} value={fab.id} className="bg-[#18181c] text-white">
+              {fab.name}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 };

@@ -1,9 +1,104 @@
-import { EmbroideryPreset, EmbroiderySettings } from '../types';
+import { EmbroideryPreset, EmbroiderySettings, ThreadStudioConfig, ThreadStudioPresetId } from '../types';
+
+export const DEFAULT_THREAD_STUDIO_CONFIG: ThreadStudioConfig = {
+  preset: 'cleanLogo',
+  lightAngle: 225,
+  lightHeight: 48,
+  threadWidth: 2.0,
+  spacing: 2.2,
+  stitchLen: 8.5,
+  fillAngle: 18,
+  bandSize: 18,
+  edgeWidth: 2.2,
+  edgeDensity: 50,
+  shine: 46,
+  roughness: 8,
+  depth: 4.0,
+  drawEdge: true,
+  drawOutline: false,
+  drawFuzz: false
+};
+
+export const THREAD_STUDIO_PRESETS: Record<ThreadStudioPresetId, ThreadStudioConfig> = {
+  cleanLogo: {
+    preset: 'cleanLogo',
+    lightAngle: 225,
+    lightHeight: 48,
+    threadWidth: 2.0,
+    spacing: 2.2,
+    stitchLen: 8.5,
+    fillAngle: 18,
+    bandSize: 18,
+    edgeWidth: 2.2,
+    edgeDensity: 50,
+    shine: 46,
+    roughness: 8,
+    depth: 4.0,
+    drawEdge: true,
+    drawOutline: false,
+    drawFuzz: false
+  },
+  realistic: {
+    preset: 'realistic',
+    lightAngle: 225,
+    lightHeight: 48,
+    threadWidth: 2.6,
+    spacing: 3.0,
+    stitchLen: 10.5,
+    fillAngle: 16,
+    bandSize: 24,
+    edgeWidth: 4.0,
+    edgeDensity: 68,
+    shine: 56,
+    roughness: 18,
+    depth: 5.0,
+    drawEdge: true,
+    drawOutline: true,
+    drawFuzz: true
+  },
+  satin: {
+    preset: 'satin',
+    lightAngle: 225,
+    lightHeight: 48,
+    threadWidth: 1.8,
+    spacing: 1.8,
+    stitchLen: 11.5,
+    fillAngle: 0,
+    bandSize: 14,
+    edgeWidth: 4.8,
+    edgeDensity: 72,
+    shine: 58,
+    roughness: 6,
+    depth: 4.4,
+    drawEdge: true,
+    drawOutline: false,
+    drawFuzz: false
+  },
+  puff: {
+    preset: 'puff',
+    lightAngle: 225,
+    lightHeight: 48,
+    threadWidth: 3.5,
+    spacing: 2.8,
+    stitchLen: 15.0,
+    fillAngle: 10,
+    bandSize: 18,
+    edgeWidth: 8.5,
+    edgeDensity: 86,
+    shine: 54,
+    roughness: 10,
+    depth: 8.5,
+    drawEdge: true,
+    drawOutline: false,
+    drawFuzz: false
+  }
+};
 
 export const DEFAULT_EMBROIDERY_SETTINGS: EmbroiderySettings = {
   presetId: 'tatami_standard',
   renderStyle: 'classic',
-  stitchPlanningMode: 'surface',
+  stitchPlanningMode: 'thread-studio',
+  threadStudio: { ...DEFAULT_THREAD_STUDIO_CONFIG },
   designWidthMm: 100,
 
   // Stitch Fill
@@ -41,6 +136,9 @@ export const DEFAULT_EMBROIDERY_SETTINGS: EmbroiderySettings = {
   contrast: 5,
   saturation: 10,
 
+  // Fabric Substrate & Backing
+  fabricSubstrate: 'none',
+
   // Scale
   renderScale: 1
 };
@@ -68,7 +166,25 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       quantizeColors: false,
       maxColors: 16,
       shadowStrength: 5.0,
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'cleanLogo',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 2.0,
+        spacing: 2.2,
+        stitchLen: 8.5,
+        fillAngle: 45,
+        bandSize: 18,
+        edgeWidth: 2.2,
+        edgeDensity: 50,
+        shine: 46,
+        roughness: 8,
+        depth: 4.0,
+        drawEdge: true,
+        drawOutline: false,
+        drawFuzz: false
+      }
     }
   },
   {
@@ -93,7 +209,25 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       quantizeColors: false,
       maxColors: 14,
       shadowStrength: 7.0,
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'satin',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 1.8,
+        spacing: 1.8,
+        stitchLen: 12.0,
+        fillAngle: 90,
+        bandSize: 14,
+        edgeWidth: 5.5,
+        edgeDensity: 78,
+        shine: 65,
+        roughness: 5,
+        depth: 5.5,
+        drawEdge: true,
+        drawOutline: false,
+        drawFuzz: false
+      }
     }
   },
   {
@@ -119,7 +253,25 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       maxColors: 12,
       shadowStrength: 8.5,
       shadowDistance: 10.0,
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'puff',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 3.5,
+        spacing: 2.6,
+        stitchLen: 15.0,
+        fillAngle: 60,
+        bandSize: 18,
+        edgeWidth: 8.5,
+        edgeDensity: 88,
+        shine: 58,
+        roughness: 8,
+        depth: 8.5,
+        drawEdge: true,
+        drawOutline: false,
+        drawFuzz: false
+      }
     }
   },
   {
@@ -146,7 +298,25 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       shadowStrength: 5.5,
       colorMode: 'palette',
       paletteId: 'metallic_luxury',
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'realistic',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 2.2,
+        spacing: 2.2,
+        stitchLen: 8.0,
+        fillAngle: 30,
+        bandSize: 20,
+        edgeWidth: 3.5,
+        edgeDensity: 60,
+        shine: 92,
+        roughness: 3,
+        depth: 4.5,
+        drawEdge: true,
+        drawOutline: false,
+        drawFuzz: false
+      }
     }
   },
   {
@@ -171,7 +341,25 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       quantizeColors: false,
       maxColors: 12,
       shadowStrength: 4.0,
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'realistic',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 2.8,
+        spacing: 3.4,
+        stitchLen: 6.0,
+        fillAngle: -30,
+        bandSize: 24,
+        edgeWidth: 2.0,
+        edgeDensity: 45,
+        shine: 25,
+        roughness: 45,
+        depth: 4.0,
+        drawEdge: true,
+        drawOutline: true,
+        drawFuzz: true
+      }
     }
   },
   {
@@ -196,7 +384,25 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       quantizeColors: false,
       maxColors: 14,
       shadowStrength: 7.5,
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'puff',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 3.0,
+        spacing: 2.2,
+        stitchLen: 10.0,
+        fillAngle: 45,
+        bandSize: 18,
+        edgeWidth: 10.0,
+        edgeDensity: 85,
+        shine: 52,
+        roughness: 12,
+        depth: 6.5,
+        drawEdge: true,
+        drawOutline: true,
+        drawFuzz: false
+      }
     }
   },
   {
@@ -221,7 +427,154 @@ export const EMBROIDERY_PRESETS: EmbroideryPreset[] = [
       quantizeColors: false,
       maxColors: 20,
       shadowStrength: 3.5,
-      useCustomBorderColor: false
+      useCustomBorderColor: false,
+      threadStudio: {
+        preset: 'cleanLogo',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 1.3,
+        spacing: 1.6,
+        stitchLen: 4.5,
+        fillAngle: 0,
+        bandSize: 14,
+        edgeWidth: 1.4,
+        edgeDensity: 55,
+        shine: 48,
+        roughness: 6,
+        depth: 3.0,
+        drawEdge: true,
+        drawOutline: false,
+        drawFuzz: false
+      }
+    }
+  },
+  {
+    id: 'leather_biker_badge',
+    name: 'Black Leather Biker Badge',
+    description: 'Heavy embroidery stitched directly on pebbled motorcycle leather with deep needle punctures',
+    category: 'Substrate',
+    settings: {
+      presetId: 'leather_biker_badge',
+      stitchAngle: 45,
+      stitchDensity: 7.0,
+      threadThickness: 5.5,
+      stitchLength: 7.0,
+      stitchJitter: 1.5,
+      threadTwist: 6.5,
+      borderType: 'satin',
+      borderThickness: 7.0,
+      embroideryDepth: 7.5,
+      specularStrength: 7.5,
+      ambientOcclusion: 8.0,
+      needlePunctureDepth: 8.5,
+      shadowStrength: 8.0,
+      shadowBlur: 10.0,
+      shadowDistance: 7.0,
+      fabricSubstrate: 'black_leather',
+      threadStudio: {
+        preset: 'realistic',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 2.8,
+        spacing: 2.6,
+        stitchLen: 9.0,
+        fillAngle: 45,
+        bandSize: 18,
+        edgeWidth: 4.5,
+        edgeDensity: 75,
+        shine: 60,
+        roughness: 14,
+        depth: 6.0,
+        drawEdge: true,
+        drawOutline: true,
+        drawFuzz: false
+      }
+    }
+  },
+  {
+    id: 'denim_vintage_jacket',
+    name: 'Vintage Indigo Denim',
+    description: 'Authentic 45° twill denim jean fabric with high-contrast stitched embroidery',
+    category: 'Substrate',
+    settings: {
+      presetId: 'denim_vintage_jacket',
+      stitchAngle: 45,
+      stitchDensity: 6.0,
+      threadThickness: 5.2,
+      stitchLength: 7.5,
+      stitchJitter: 2.0,
+      threadTwist: 6.0,
+      borderType: 'running',
+      borderThickness: 4.5,
+      embroideryDepth: 6.0,
+      specularStrength: 6.0,
+      ambientOcclusion: 6.5,
+      needlePunctureDepth: 7.0,
+      shadowStrength: 6.5,
+      shadowBlur: 8.0,
+      shadowDistance: 5.5,
+      fabricSubstrate: 'indigo_denim',
+      threadStudio: {
+        preset: 'realistic',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 2.5,
+        spacing: 2.8,
+        stitchLen: 8.5,
+        fillAngle: 45,
+        bandSize: 20,
+        edgeWidth: 3.5,
+        edgeDensity: 60,
+        shine: 40,
+        roughness: 25,
+        depth: 4.5,
+        drawEdge: true,
+        drawOutline: true,
+        drawFuzz: true
+      }
+    }
+  },
+  {
+    id: 'sweatshirt_fleece_holiday',
+    name: 'Olive Sweatshirt Fleece',
+    description: 'Heathered forest green fleece matching holiday apparel and festive crests',
+    category: 'Substrate',
+    settings: {
+      presetId: 'sweatshirt_fleece_holiday',
+      stitchAngle: 45,
+      stitchDensity: 6.5,
+      threadThickness: 5.0,
+      stitchLength: 6.5,
+      stitchJitter: 2.0,
+      threadTwist: 5.5,
+      borderType: 'satin',
+      borderThickness: 6.0,
+      embroideryDepth: 6.5,
+      specularStrength: 6.5,
+      ambientOcclusion: 6.0,
+      needlePunctureDepth: 6.5,
+      shadowStrength: 6.0,
+      shadowBlur: 9.0,
+      shadowDistance: 6.0,
+      fabricSubstrate: 'olive_sweatshirt',
+      threadStudio: {
+        preset: 'realistic',
+        lightAngle: 225,
+        lightHeight: 48,
+        threadWidth: 2.4,
+        spacing: 2.5,
+        stitchLen: 8.0,
+        fillAngle: 45,
+        bandSize: 18,
+        edgeWidth: 3.8,
+        edgeDensity: 65,
+        shine: 50,
+        roughness: 20,
+        depth: 5.0,
+        drawEdge: true,
+        drawOutline: false,
+        drawFuzz: true
+      }
     }
   }
 ];

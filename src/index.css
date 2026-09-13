@@ -110,3 +110,22 @@ input[type="range"]::-webkit-slider-thumb:active {
   background: #e4e4e7;
   transform: translateY(1px);
 }
+
+/* Studio Loading Shimmer & Spin Animations */
+@keyframes studio-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-shimmer {
+  animation: studio-shimmer 1.8s infinite ease-in-out;
+}
+
+@keyframes spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+.animate-spin-reverse {
+  animation: spin-reverse 2s linear infinite;
+}

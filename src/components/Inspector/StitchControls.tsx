@@ -23,18 +23,18 @@ export const StitchControls: React.FC<StitchControlsProps> = ({
       <SliderControl
         label="Thread Density"
         value={settings.stitchDensity}
-        min={1.0}
+        min={2.5}
         max={10.0}
         step={0.5}
-        defaultValue={5.5}
+        defaultValue={6.0}
         onChange={(stitchDensity) => onChange({ stitchDensity, presetId: undefined })}
       />
 
       <SliderControl
         label="Thread Thickness"
         value={settings.threadThickness}
-        min={1.0}
-        max={10.0}
+        min={2.0}
+        max={8.5}
         step={0.5}
         defaultValue={5.0}
         onChange={(threadThickness) => onChange({ threadThickness, presetId: undefined })}

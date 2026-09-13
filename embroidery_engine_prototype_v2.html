@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Embroidery Engine Prototype</title>
+<style>
+  :root{
+    --bg:#0f1216;
+    --panel:#171b21;
+    --panel2:#1d232b;
+    --line:#2b333d;
+    --text:#edf2f7;
+    --muted:#9eabb8;
+    --accent:#f1d38a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .app{
+    height:100vh;
+    display:grid;
+    grid-template-columns:280px 1fr 320px;
+    grid-template-rows:60px 1fr;
+  }
+  header{
+    grid-column:1/-1;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;border-bottom:1px solid var(--line);
+    background:#12161b;
+  }
+  .brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.01em}
+  .mark{
+    width:34px;height:34px;border-radius:10px;background:#20262e;border:1px solid #36404b;
+    display:grid;place-items:center;position:relative;
+  }
+  .mark:before,.mark:after{
+    content:"";position:absolute;border-radius:50%;
+    border:2px solid #e5e7eb;
+  }
+  .mark:before{width:18px;height:18px}
+  .mark:after{width:8px;height:8px;background:#e5e7eb;border:none}
+  .topbar{display:flex;gap:8px}
+  button,.btn{
+    border:1px solid var(--line);
+    background:#242b34;color:var(--text);
+    padding:9px 12px;border-radius:9px;font-weight:600;cursor:pointer;
+  }
+  button:hover,.btn:hover{background:#2b333d}
+  .primary{background:#f5f7fa;color:#101215;border-color:#f5f7fa}
+  .primary:hover{background:white}
+  aside{
+    background:var(--panel);
+    overflow:auto;padding:16px;
+  }
+  .left{border-right:1px solid var(--line)}
+  .right{border-left:1px solid var(--line)}
+  h3{
+    margin:0 0 10px;font-size:12px;color:#d6dce3;text-transform:uppercase;letter-spacing:.12em
+  }
+  .drop{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;min-height:165px;text-align:center;border:1px dashed #485463;border-radius:14px;
+    background:#13181d;padding:14px;cursor:pointer;
+  }
+  .drop.drag{border-color:#e9edf2;background:#1a2028}
+  .drop strong{font-size:15px}
+  .drop small{color:var(--muted)}
+  .thumbBox{
+    display:none;margin-top:14px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#12161b;
+  }
+  #thumb{display:block;max-width:100%;margin:auto}
+  .section{margin-top:18px}
+  .presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .preset{
+    border:1px solid var(--line);background:#20262e;border-radius:9px;padding:10px;
+    text-align:center;font-weight:600;font-size:12px;cursor:pointer;
+  }
+  .preset.active{background:#2b333d;border-color:#dce3ea}
+  .switchRow{
+    display:flex;justify-content:space-between;align-items:center;
+    gap:10px;padding:10px 0;border-bottom:1px solid #252c35;
+  }
+  input[type="checkbox"]{width:16px;height:16px}
+  .note{
+    margin-top:16px;padding:11px 12px;border-radius:10px;border:1px solid #313943;background:#12161b;color:#aab4be;font-size:12px;
+  }
+  .control{margin:15px 0}
+  .controlHead{display:flex;justify-content:space-between;gap:10px;margin-bottom:7px}
+  .controlHead span:last-child{color:#b7c1cb;font-variant-numeric:tabular-nums}
+  input[type="range"]{width:100%;accent-color:#dfe5eb}
+  main{
+    position:relative;overflow:hidden;
+    background:radial-gradient(circle at 50% 45%, #1f2630 0%, #13171c 55%, #0f1115 100%);
+  }
+  .stage{
+    position:absolute;inset:16px;border:1px solid #2b333d;border-radius:14px;overflow:hidden;
+    display:grid;place-items:center;background-color:#171c22;
+    background-image:
+      linear-gradient(45deg,#1b2128 25%,transparent 25%),
+      linear-gradient(-45deg,#1b2128 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#1b2128 75%),
+      linear-gradient(-45deg,transparent 75%,#1b2128 75%);
+    background-size:22px 22px;
+    background-position:0 0,0 11px,11px -11px,-11px 0;
+  }
+  #preview{
+    max-width:94%;max-height:90%;
+    image-rendering:auto;
+    filter:drop-shadow(0 14px 30px rgba(0,0,0,.35));
+  }
+  .empty{
+    position:absolute;text-align:center;color:#92a0ad;pointer-events:none;
+  }
+  .empty strong{display:block;color:#dce3ea;font-size:16px;margin-bottom:6px}
+  .hud{
+    position:absolute;left:50%;bottom:28px;transform:translateX(-50%);
+    display:flex;gap:8px;padding:7px;background:#171c22cc;border:1px solid #36404b;border-radius:10px;
+    backdrop-filter:blur(8px);
+  }
+  .status{
+    position:absolute;right:26px;top:26px;padding:8px 10px;background:#171c22dd;border:1px solid #36404b;
+    border-radius:8px;font-size:12px;color:#b7c1cb;display:none;
+  }
+  .spinner{
+    width:12px;height:12px;display:inline-block;margin-right:7px;vertical-align:-2px;
+    border-radius:50%;border:2px solid #576170;border-top-color:#ecf0f5;animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .footerTip{
+    margin-top:8px;color:#7f8b97;font-size:11px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="mark"></div>
+      Embroidery Engine Prototype
+    </div>
+    <div class="topbar">
+      <button id="resetBtn">Reset</button>
+      <button id="exportBtn" class="primary">Export Transparent PNG</button>
+    </div>
+  </header>
+
+  <aside class="left">
+    <h3>Artwork</h3>
+    <label class="drop" id="drop">
+      <input id="fileInput" hidden type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
+      <strong>Drop logo / art here</strong>
+      <small>Best with transparent PNG or simple artwork</small>
+      <span class="btn">Choose image</span>
+    </label>
+
+    <div class="thumbBox" id="thumbBox">
+      <canvas id="thumb"></canvas>
+    </div>
+
+    <div class="section">
+      <h3>Embroidery Presets</h3>
+      <div class="presets">
+        <div class="preset active" data-preset="realistic">Realistic</div>
+        <div class="preset" data-preset="satin">Dense Satin</div>
+        <div class="preset" data-preset="soft">Soft Thread</div>
+        <div class="preset" data-preset="puff">Raised / Puff</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Preview</h3>
+      <div class="switchRow">
+        <span>Show fabric background</span>
+        <input id="showFabric" type="checkbox" checked />
+      </div>
+      <div class="switchRow">
+        <span>Preserve original colors</span>
+        <input id="preserveColors" type="checkbox" checked />
+      </div>
+      <div class="switchRow">
+        <span>Draw edge satin stitches</span>
+        <input id="drawEdge" type="checkbox" checked />
+      </div>
+      <div class="switchRow">
+        <span>Running stitch outline</span>
+        <input id="drawOutline" type="checkbox" checked />
+      </div>
+    </div>
+
+    <div class="note">
+      This engine is procedural, not AI generated. It rebuilds the uploaded artwork using simulated embroidery stitches: tatami fill, satin edge stitches, thread shine, and depth.
+    </div>
+    <div class="footerTip">Tip: upload simple art with clean edges for the best result.</div>
+  </aside>
+
+  <main>
+    <div class="stage">
+      <canvas id="preview"></canvas>
+      <div class="empty" id="empty">
+        <strong>Upload artwork to start</strong>
+        It will be re-rendered as machine embroidery.
+      </div>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="hud">
+      <button id="compareBtn">Hold to Compare</button>
+      <button id="rerenderBtn">Re-render</button>
+    </div>
+  </main>
+
+  <aside class="right">
+    <h3>Engine Controls</h3>
+
+    <div class="control">
+      <div class="controlHead"><span>Thread width</span><span id="threadWidthVal"></span></div>
+      <input id="threadWidth" type="range" min="1.5" max="7" step="0.1" value="3.4" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Stitch spacing</span><span id="spacingVal"></span></div>
+      <input id="spacing" type="range" min="2" max="12" step="0.2" value="4.2" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Stitch length</span><span id="stitchLenVal"></span></div>
+      <input id="stitchLen" type="range" min="4" max="30" step="0.5" value="12" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Fill angle</span><span id="fillAngleVal"></span></div>
+      <input id="fillAngle" type="range" min="-90" max="90" step="1" value="18" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Band size (tatami)</span><span id="bandSizeVal"></span></div>
+      <input id="bandSize" type="range" min="10" max="70" step="1" value="28" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Satin edge width</span><span id="edgeWidthVal"></span></div>
+      <input id="edgeWidth" type="range" min="0" max="14" step="0.5" value="4.8" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Thread shine</span><span id="shineVal"></span></div>
+      <input id="shine" type="range" min="0" max="100" step="1" value="52" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Roughness</span><span id="roughnessVal"></span></div>
+      <input id="roughness" type="range" min="0" max="100" step="1" value="30" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Embroidery height</span><span id="depthVal"></span></div>
+      <input id="depth" type="range" min="0" max="16" step="0.5" value="5.5" />
+    </div>
+
+    <div class="control">
+      <div class="controlHead"><span>Scale</span><span id="scaleVal"></span></div>
+      <input id="scale" type="range" min="55" max="125" step="1" value="95" />
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+
+  const preview = $('#preview');
+  const ctx = preview.getContext('2d', { willReadFrequently: true });
+
+  const fileInput = $('#fileInput');
+  const drop = $('#drop');
+  const thumbBox = $('#thumbBox');
+  const thumb = $('#thumb');
+  const thumbCtx = thumb.getContext('2d');
+  const empty = $('#empty');
+  const status = $('#status');
+
+  const showFabric = $('#showFabric');
+  const preserveColors = $('#preserveColors');
+  const drawEdge = $('#drawEdge');
+  const drawOutline = $('#drawOutline');
+
+  const controls = {
+    threadWidth: $('#threadWidth'),
+    spacing: $('#spacing'),
+    stitchLen: $('#stitchLen'),
+    fillAngle: $('#fillAngle'),
+    bandSize: $('#bandSize'),
+    edgeWidth: $('#edgeWidth'),
+    shine: $('#shine'),
+    roughness: $('#roughness'),
+    depth: $('#depth'),
+    scale: $('#scale')
+  };
+
+  const labels = {
+    threadWidth: $('#threadWidthVal'),
+    spacing: $('#spacingVal'),
+    stitchLen: $('#stitchLenVal'),
+    fillAngle: $('#fillAngleVal'),
+    bandSize: $('#bandSizeVal'),
+    edgeWidth: $('#edgeWidthVal'),
+    shine: $('#shineVal'),
+    roughness: $('#roughnessVal'),
+    depth: $('#depthVal'),
+    scale: $('#scaleVal')
+  };
+
+  const defaultValues = {
+    threadWidth:3.4, spacing:4.2, stitchLen:12, fillAngle:18, bandSize:28,
+    edgeWidth:4.8, shine:52, roughness:30, depth:5.5, scale:95
+  };
+
+  let sourceImage = null;
+  let sourceCanvas = null;
+  let sourceCtx = null;
+  let sourceData = null;
+  let renderTimer = null;
+  let renderSeed = 1;
+  let lastRenderTransparentData = null;
+
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function lerp(a,b,t){ return a + (b-a)*t; }
+  function degToRad(d){ return d * Math.PI / 180; }
+  function rgba(r,g,b,a=1){ return `rgba(${r|0},${g|0},${b|0},${a})`; }
+
+  function mulberry32(seed){
+    let t = seed >>> 0;
+    return function(){
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ t >>> 15, 1 | t);
+      r ^= r + Math.imul(r ^ r >>> 7, 61 | r);
+      return ((r ^ r >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function setStatus(text, spin=false){
+    status.style.display = 'block';
+    status.innerHTML = (spin ? '<span class="spinner"></span>' : '') + text;
+  }
+  function hideStatus(){ status.style.display = 'none'; }
+
+  function updateLabels(){
+    labels.threadWidth.textContent = (+controls.threadWidth.value).toFixed(1) + ' px';
+    labels.spacing.textContent = (+controls.spacing.value).toFixed(1) + ' px';
+    labels.stitchLen.textContent = (+controls.stitchLen.value).toFixed(1) + ' px';
+    labels.fillAngle.textContent = controls.fillAngle.value + '°';
+    labels.bandSize.textContent = controls.bandSize.value + ' px';
+    labels.edgeWidth.textContent = (+controls.edgeWidth.value).toFixed(1) + ' px';
+    labels.shine.textContent = controls.shine.value + '%';
+    labels.roughness.textContent = controls.roughness.value + '%';
+    labels.depth.textContent = (+controls.depth.value).toFixed(1) + ' px';
+    labels.scale.textContent = controls.scale.value + '%';
+  }
+  updateLabels();
+
+  function loadFile(file){
+    if(!file) return;
+    const img = new Image();
+    img.onload = () => {
+      sourceImage = img;
+      prepareSource();
+      render();
+      thumbBox.style.display = 'block';
+      drawThumb();
+      empty.style.display = 'none';
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  }
+
+  function prepareSource(){
+    const maxDim = 760;
+    let w = sourceImage.naturalWidth;
+    let h = sourceImage.naturalHeight;
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    w = Math.max(1, Math.round(w * scale));
+    h = Math.max(1, Math.round(h * scale));
+
+    sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = w;
+    sourceCanvas.height = h;
+    sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    sourceCtx.clearRect(0,0,w,h);
+    sourceCtx.drawImage(sourceImage, 0, 0, w, h);
+    sourceData = sourceCtx.getImageData(0,0,w,h);
+  }
+
+  function drawThumb(){
+    const max = 220;
+    const s = Math.min(1, max/sourceCanvas.width, max/sourceCanvas.height);
+    thumb.width = Math.max(1, Math.round(sourceCanvas.width * s));
+    thumb.height = Math.max(1, Math.round(sourceCanvas.height * s));
+    thumbCtx.clearRect(0,0,thumb.width,thumb.height);
+    thumbCtx.drawImage(sourceCanvas, 0, 0, thumb.width, thumb.height);
+  }
+
+  function getAlpha(x,y){
+    if(!sourceData) return 0;
+    if(x < 0 || y < 0 || x >= sourceData.width || y >= sourceData.height) return 0;
+    return sourceData.data[(y * sourceData.width + x) * 4 + 3];
+  }
+
+  function getColor(x,y){
+    x = clamp(x|0, 0, sourceData.width - 1);
+    y = clamp(y|0, 0, sourceData.height - 1);
+    const i = (y * sourceData.width + x) * 4;
+    let r = sourceData.data[i];
+    let g = sourceData.data[i+1];
+    let b = sourceData.data[i+2];
+    let a = sourceData.data[i+3];
+    if(!preserveColors.checked){
+      const l = 0.2126*r + 0.7152*g + 0.0722*b;
+      r = l * 1.05;
+      g = l * 1.00;
+      b = l * 0.90;
+    }
+    return [r,g,b,a];
+  }
+
+  function isInside(x,y, th=18){
+    return getAlpha(x,y) > th;
+  }
+
+  function isEdgePixel(x,y){
+    if(!isInside(x,y,30)) return false;
+    const d = 2;
+    return (
+      getAlpha(x+d,y) < 24 ||
+      getAlpha(x-d,y) < 24 ||
+      getAlpha(x,y+d) < 24 ||
+      getAlpha(x,y-d) < 24
+    );
+  }
+
+  function getNormal(x,y){
+    const gx = getAlpha(x+1,y) - getAlpha(x-1,y);
+    const gy = getAlpha(x,y+1) - getAlpha(x,y-1);
+    let len = Math.hypot(gx, gy);
+    if(len < 0.0001) return {x:0, y:-1};
+    return {x:gx/len, y:gy/len};
+  }
+
+  function drawFabricBackground(w,h){
+    ctx.fillStyle = '#5e6748';
+    ctx.fillRect(0,0,w,h);
+
+    const rnd = mulberry32(90210);
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    for(let i=0;i<Math.min(13000, (w*h)/7);i++){
+      const x = rnd()*w;
+      const y = rnd()*h;
+      const v = 95 + rnd()*55;
+      ctx.strokeStyle = `rgb(${v|0},${(v*0.97)|0},${(v*0.79)|0})`;
+      ctx.lineWidth = 0.4 + rnd()*0.45;
+      ctx.beginPath();
+      ctx.moveTo(x,y);
+      ctx.lineTo(x + 2 + rnd()*3, y + 0.7 + rnd()*0.8);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.lineWidth = 1;
+    for(let y=0;y<h;y+=5){
+      ctx.strokeStyle = 'rgba(255,255,255,.03)';
+      ctx.beginPath();
+      ctx.moveTo(0,y+.5);
+      ctx.lineTo(w,y+.5);
+      ctx.stroke();
+    }
+    for(let x=0;x<w;x+=5){
+      ctx.strokeStyle = 'rgba(0,0,0,.025)';
+      ctx.beginPath();
+      ctx.moveTo(x+.5,0);
+      ctx.lineTo(x+.5,h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function createMaskedTintCanvas(r,g,b,a=1){
+    const c = document.createElement('canvas');
+    c.width = sourceCanvas.width;
+    c.height = sourceCanvas.height;
+    const cctx = c.getContext('2d');
+    cctx.drawImage(sourceCanvas,0,0);
+    cctx.globalCompositeOperation = 'source-in';
+    cctx.fillStyle = rgba(r,g,b,a);
+    cctx.fillRect(0,0,c.width,c.height);
+    return c;
+  }
+
+  function drawEmbroideryShadow(depth){
+    if(depth <= 0) return;
+    const sh = createMaskedTintCanvas(0,0,0,0.85);
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+    ctx.filter = `blur(${Math.max(1, depth*1.05)}px)`;
+    ctx.drawImage(sh, depth*0.85, depth*1.00);
+    ctx.restore();
+  }
+
+  function drawUnderlay(angleDeg, spacing, width){
+    const a = degToRad(angleDeg);
+    const step = Math.max(5, spacing*1.45);
+    const len = Math.max(8, +controls.stitchLen.value * 1.15);
+    const rnd = mulberry32(renderSeed + 1200);
+
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    ctx.lineCap = 'round';
+
+    const cx = sourceCanvas.width / 2;
+    const cy = sourceCanvas.height / 2;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    const diag = Math.hypot(sourceCanvas.width, sourceCanvas.height);
+
+    for(let u = -diag; u <= diag; u += step){
+      for(let v = -diag; v <= diag; v += step){
+        const x = cx + u*cos - v*sin;
+        const y = cy + u*sin + v*cos;
+        if(!isInside(x|0, y|0, 40)) continue;
+
+        const [r,g,b] = getColor(x|0,y|0);
+        const tone = -30 + rnd()*12;
+        ctx.lineWidth = Math.max(1, width*0.75);
+        ctx.strokeStyle = rgba(clamp(r+tone,0,255), clamp(g+tone,0,255), clamp(b+tone,0,255), 0.22);
+
+        const dx = Math.cos(a) * len * 0.35;
+        const dy = Math.sin(a) * len * 0.35;
+        ctx.beginPath();
+        ctx.moveTo(x-dx, y-dy);
+        ctx.lineTo(x+dx, y+dy);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawTatamiFill(){
+    const threadWidth = +controls.threadWidth.value;
+    const spacing = +controls.spacing.value;
+    const stitchLen = +controls.stitchLen.value;
+    const fillAngle = +controls.fillAngle.value;
+    const bandSize = +controls.bandSize.value;
+    const shine = +controls.shine.value / 100;
+    const roughness = +controls.roughness.value / 100;
+
+    const cx = sourceCanvas.width / 2;
+    const cy = sourceCanvas.height / 2;
+    const baseA = degToRad(fillAngle);
+    const altA = degToRad(fillAngle + 90);
+    const diag = Math.hypot(sourceCanvas.width, sourceCanvas.height);
+    const step = Math.max(1.6, spacing);
+    const rnd = mulberry32(renderSeed + 800);
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for(let gridY = -diag; gridY <= diag; gridY += step){
+      const useAlt = Math.floor((gridY + diag) / bandSize) % 2 === 1;
+      const angle = useAlt ? altA : baseA;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+
+      for(let gridX = -diag; gridX <= diag; gridX += stitchLen * 0.72){
+        const jitterX = (rnd() - 0.5) * spacing * roughness * 1.6;
+        const jitterY = (rnd() - 0.5) * spacing * roughness * 1.6;
+
+        const x = cx + gridX*Math.cos(baseA) - gridY*Math.sin(baseA) + jitterX;
+        const y = cy + gridX*Math.sin(baseA) + gridY*Math.cos(baseA) + jitterY;
+
+        if(!isInside(x|0, y|0, 35)) continue;
+
+        const [r,g,b,a] = getColor(x|0,y|0);
+        const localShade = (rnd()-0.5) * 28;
+        const rr = clamp(r + localShade, 0, 255);
+        const gg = clamp(g + localShade, 0, 255);
+        const bb = clamp(b + localShade, 0, 255);
+
+        const len = stitchLen * lerp(0.8, 1.12, rnd());
+        const dx = Math.cos(angle) * len * 0.5;
+        const dy = Math.sin(angle) * len * 0.5;
+
+        ctx.lineWidth = threadWidth + 1.3;
+        ctx.strokeStyle = rgba(rr*0.48, gg*0.48, bb*0.48, Math.min(0.65, a/255));
+        ctx.beginPath();
+        ctx.moveTo(x-dx+0.7, y-dy+0.8);
+        ctx.lineTo(x+dx+0.7, y+dy+0.8);
+        ctx.stroke();
+
+        ctx.lineWidth = threadWidth;
+        ctx.strokeStyle = rgba(rr, gg, bb, Math.min(0.96, a/255));
+        ctx.beginPath();
+        ctx.moveTo(x-dx, y-dy);
+        ctx.lineTo(x+dx, y+dy);
+        ctx.stroke();
+
+        if(shine > 0){
+          ctx.lineWidth = Math.max(0.55, threadWidth*0.26);
+          ctx.strokeStyle = rgba(
+            clamp(rr + 35 + shine*50, 0, 255),
+            clamp(gg + 35 + shine*50, 0, 255),
+            clamp(bb + 35 + shine*50, 0, 255),
+            0.18 + 0.25*shine
+          );
+          ctx.beginPath();
+          ctx.moveTo(x-dx*0.75, y-dy*0.75);
+          ctx.lineTo(x+dx*0.4, y+dy*0.4);
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function drawSatinEdge(){
+    if(!drawEdge.checked) return;
+    const threadWidth = +controls.threadWidth.value;
+    const edgeWidth = +controls.edgeWidth.value;
+    if(edgeWidth <= 0.01) return;
+
+    const roughness = +controls.roughness.value / 100;
+    const shine = +controls.shine.value / 100;
+    const rnd = mulberry32(renderSeed + 3000);
+    const step = Math.max(2, Math.round(6 - Math.min(edgeWidth, 4)*0.4));
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for(let y=1; y<sourceCanvas.height-1; y+=step){
+      for(let x=1; x<sourceCanvas.width-1; x+=step){
+        if(!isEdgePixel(x,y)) continue;
+        if(rnd() > 0.94) continue;
+
+        const n = getNormal(x,y);
+        let angle = Math.atan2(n.y, n.x);
+        angle += (rnd()-0.5) * 0.5 * roughness;
+
+        const len = edgeWidth * 2.1;
+        const dx = Math.cos(angle) * len * 0.5;
+        const dy = Math.sin(angle) * len * 0.5;
+
+        const [r,g,b,a] = getColor(x,y);
+        const shade = (rnd()-0.5)*18;
+        const rr = clamp(r+shade,0,255);
+        const gg = clamp(g+shade,0,255);
+        const bb = clamp(b+shade,0,255);
+
+        ctx.lineWidth = Math.max(1.2, edgeWidth*0.74);
+        ctx.strokeStyle = rgba(rr*0.46, gg*0.46, bb*0.46, 0.72);
+        ctx.beginPath();
+        ctx.moveTo(x-dx+0.65, y-dy+0.75);
+        ctx.lineTo(x+dx+0.65, y+dy+0.75);
+        ctx.stroke();
+
+        ctx.lineWidth = Math.max(0.9, edgeWidth*0.52);
+        ctx.strokeStyle = rgba(rr, gg, bb, Math.min(0.95, a/255));
+        ctx.beginPath();
+        ctx.moveTo(x-dx, y-dy);
+        ctx.lineTo(x+dx, y+dy);
+        ctx.stroke();
+
+        ctx.lineWidth = Math.max(0.45, edgeWidth*0.16);
+        ctx.strokeStyle = rgba(
+          clamp(rr + 45 + shine*35, 0, 255),
+          clamp(gg + 45 + shine*35, 0, 255),
+          clamp(bb + 45 + shine*35, 0, 255),
+          0.20 + 0.22*shine
+        );
+        ctx.beginPath();
+        ctx.moveTo(x-dx*0.75, y-dy*0.75);
+        ctx.lineTo(x+dx*0.35, y+dy*0.35);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawRunningOutline(){
+    if(!drawOutline.checked) return;
+    const rnd = mulberry32(renderSeed + 6000);
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    const step = 4;
+    const len = 5.6;
+    for(let y=1; y<sourceCanvas.height-1; y+=step){
+      for(let x=1; x<sourceCanvas.width-1; x+=step){
+        if(!isEdgePixel(x,y)) continue;
+        const [r,g,b,a] = getColor(x,y);
+        const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+        const lineC = lum < 60 ? [12,12,12] : [Math.max(0,r-70), Math.max(0,g-70), Math.max(0,b-70)];
+        const n = getNormal(x,y);
+        let tangent = Math.atan2(n.y, n.x) + Math.PI/2;
+        tangent += (rnd()-0.5) * 0.18;
+        const dx = Math.cos(tangent) * len * 0.5;
+        const dy = Math.sin(tangent) * len * 0.5;
+
+        ctx.lineWidth = 0.95;
+        ctx.strokeStyle = rgba(lineC[0], lineC[1], lineC[2], Math.min(0.9, a/255));
+        ctx.beginPath();
+        ctx.moveTo(x-dx, y-dy);
+        ctx.lineTo(x+dx, y+dy);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawSurfaceHighlight(depth){
+    if(depth <= 0) return;
+    const hi = createMaskedTintCanvas(255,255,255,0.55);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.12 + (+controls.shine.value/100)*0.12;
+    ctx.filter = `blur(${Math.max(0.8, depth*0.4)}px)`;
+    ctx.drawImage(hi, -depth*0.35, -depth*0.35);
+    ctx.restore();
+  }
+
+  function captureTransparentOutput(){
+    if(showFabric.checked){
+      const img = ctx.getImageData(0,0,preview.width,preview.height);
+      lastRenderTransparentData = img;
+    }
+  }
+
+  async function render(transparentOnly=false){
+    if(!sourceCanvas) return;
+
+    setStatus('Rendering embroidery stitches…', true);
+    await new Promise(r=>setTimeout(r, 18));
+
+    preview.width = sourceCanvas.width;
+    preview.height = sourceCanvas.height;
+
+    const scale = +controls.scale.value / 100;
+    preview.style.width = Math.round(sourceCanvas.width * scale) + 'px';
+    preview.style.height = Math.round(sourceCanvas.height * scale) + 'px';
+
+    ctx.clearRect(0,0,preview.width,preview.height);
+    if(showFabric.checked && !transparentOnly) drawFabricBackground(preview.width, preview.height);
+
+    const depth = +controls.depth.value;
+
+    drawEmbroideryShadow(depth);
+    drawUnderlay(+controls.fillAngle.value + 90, +controls.spacing.value, +controls.threadWidth.value);
+    drawTatamiFill();
+    drawSatinEdge();
+    drawRunningOutline();
+    drawSurfaceHighlight(depth);
+
+    if(!showFabric.checked || transparentOnly){
+      lastRenderTransparentData = ctx.getImageData(0,0,preview.width,preview.height);
+    }
+
+    hideStatus();
+  }
+
+  function queueRender(){
+    updateLabels();
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => render(), 120);
+  }
+
+  Object.values(controls).forEach(el => el.addEventListener('input', queueRender));
+  [showFabric, preserveColors, drawEdge, drawOutline].forEach(el => el.addEventListener('change', () => render()));
+
+  $('#rerenderBtn').addEventListener('click', () => {
+    renderSeed = Math.floor(Math.random() * 1e9);
+    render();
+  });
+
+  $('#resetBtn').addEventListener('click', () => {
+    for(const key in defaultValues) controls[key].value = defaultValues[key];
+    showFabric.checked = true;
+    preserveColors.checked = true;
+    drawEdge.checked = true;
+    drawOutline.checked = true;
+    renderSeed = 1;
+    updateLabels();
+    render();
+  });
+
+  document.querySelector('.presets').addEventListener('click', e => {
+    const preset = e.target.closest('.preset');
+    if(!preset) return;
+    document.querySelectorAll('.preset').forEach(p=>p.classList.remove('active'));
+    preset.classList.add('active');
+
+    const name = preset.dataset.preset;
+    const map = {
+      realistic:{threadWidth:3.4,spacing:4.2,stitchLen:12,fillAngle:18,bandSize:28,edgeWidth:4.8,shine:52,roughness:30,depth:5.5},
+      satin:{threadWidth:3.0,spacing:3.0,stitchLen:15,fillAngle:0,bandSize:16,edgeWidth:7.6,shine:60,roughness:18,depth:5.2},
+      soft:{threadWidth:4.3,spacing:5.4,stitchLen:13,fillAngle:22,bandSize:38,edgeWidth:3.8,shine:38,roughness:45,depth:6.0},
+      puff:{threadWidth:4.2,spacing:3.8,stitchLen:16,fillAngle:10,bandSize:20,edgeWidth:8.8,shine:55,roughness:24,depth:9.5}
+    }[name];
+
+    Object.entries(map).forEach(([k,v]) => controls[k].value = v);
+    updateLabels();
+    render();
+  });
+
+  $('#compareBtn').addEventListener('mousedown', showOriginal);
+  $('#compareBtn').addEventListener('touchstart', e => { e.preventDefault(); showOriginal(); }, {passive:false});
+  ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev => $('#compareBtn').addEventListener(ev, () => render()));
+
+  function showOriginal(){
+    if(!sourceCanvas) return;
+    ctx.clearRect(0,0,preview.width,preview.height);
+    if(showFabric.checked) drawFabricBackground(preview.width, preview.height);
+    ctx.drawImage(sourceCanvas, 0, 0);
+  }
+
+  $('#exportBtn').addEventListener('click', async () => {
+    if(!sourceCanvas) {
+      alert('Please upload artwork first.');
+      return;
+    }
+    const old = showFabric.checked;
+    showFabric.checked = false;
+    updateLabels();
+    await render(true);
+    const a = document.createElement('a');
+    a.href = preview.toDataURL('image/png');
+    a.download = 'embroidery-effect.png';
+    a.click();
+    showFabric.checked = old;
+    render();
+  });
+
+  fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if(f) loadFile(f);
+  });
+})();
+</script>
+</body>
+</html>

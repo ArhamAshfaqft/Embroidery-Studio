@@ -37,10 +37,28 @@ interface EmbroideryStudioProps {
   onTogglePreviewMode?: () => void;
   onProceedToMockup: () => void;
   onTriggerSmartOptimize?: () => void;
+  isSmartOptimizing?: boolean;
+  onSmartOptimizeComplete?: () => void;
   history: HistoryStep[];
   currentHistoryIndex: number;
   onRevertHistory: (index: number) => void;
+  onSaveSettingsAsDefault?: (target?: 'all' | 'embroidery' | 'mockup') => void;
+  onResetSettingsToDefault?: () => void;
+  saveStatusText?: string;
 }
+
+const parseProgress = (status: string): { percent: number | null; step: string } => {
+  const match = status.match(/\((\d+)\s*\/\s*(\d+)\)/);
+  if (match) {
+    const current = parseInt(match[1], 10);
+    const total = parseInt(match[2], 10);
+    if (total > 0) {
+      const percent = Math.min(100, Math.max(0, Math.round((current / total) * 100)));
+      return { percent, step: `${current}/${total}` };
+    }
+  }
+  return { percent: null, step: '' };
+};
 
 export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   sourceAsset,
@@ -61,10 +79,18 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   onTogglePreviewMode,
   onProceedToMockup,
   onTriggerSmartOptimize,
+  isSmartOptimizing = false,
+  onSmartOptimizeComplete,
   history,
   currentHistoryIndex,
-  onRevertHistory
+  onRevertHistory,
+  onSaveSettingsAsDefault,
+  onResetSettingsToDefault,
+  saveStatusText
 }) => {
+  const onSmartOptimizeCompleteRef = useRef(onSmartOptimizeComplete);
+  onSmartOptimizeCompleteRef.current = onSmartOptimizeComplete;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
@@ -92,6 +118,57 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
   });
 
   const [isRendering, setIsRendering] = useState(false);
+  const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
+  const [isOverlayFadingOut, setIsOverlayFadingOut] = useState(false);
+  const overlayTimerRef = useRef<number | null>(null);
+  const fadeTimerRef = useRef<number | null>(null);
+
+  const isSegmenting = Boolean(
+    renderStats.status.toLowerCase().includes('detecting artwork') ||
+    renderStats.status.toLowerCase().includes('mobilesam') ||
+    renderStats.status.toLowerCase().includes('encoding artwork') ||
+    renderStats.status.toLowerCase().includes('segment')
+  );
+
+  const isSmartActive = Boolean(isSmartOptimizing);
+  const shouldShowImmediately = isSmartActive || isSegmenting;
+
+  useEffect(() => {
+    if (isRendering) {
+      if (fadeTimerRef.current) {
+        window.clearTimeout(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
+      setIsOverlayFadingOut(false);
+
+      if (shouldShowImmediately) {
+        if (overlayTimerRef.current) window.clearTimeout(overlayTimerRef.current);
+        setShowLoadingOverlay(true);
+      } else {
+        // Normal render (e.g. changing background fabric, lighting sliders, presets):
+        // Debounce by 450ms so fast renders never flash any card at all!
+        if (overlayTimerRef.current) window.clearTimeout(overlayTimerRef.current);
+        overlayTimerRef.current = window.setTimeout(() => {
+          setShowLoadingOverlay(true);
+        }, 450);
+      }
+    } else {
+      if (overlayTimerRef.current) {
+        window.clearTimeout(overlayTimerRef.current);
+        overlayTimerRef.current = null;
+      }
+      setIsOverlayFadingOut(true);
+      fadeTimerRef.current = window.setTimeout(() => {
+        setShowLoadingOverlay(false);
+        setIsOverlayFadingOut(false);
+      }, 180);
+    }
+    return () => {
+      if (overlayTimerRef.current) window.clearTimeout(overlayTimerRef.current);
+      if (fadeTimerRef.current) window.clearTimeout(fadeTimerRef.current);
+    };
+  }, [isRendering, shouldShowImmediately]);
+
   const [splitPos, setSplitPos] = useState(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
 
@@ -156,14 +233,11 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
 
     const embCanvas = cachedEmbroideryCanvasRef.current;
     const targetCanvas = canvasRef.current;
-    // Explicit high-quality reduction avoids moire from CSS shrinking a 10K
-    // texture. The native cached render remains available when zoom increases.
-    const density = Math.min(1, zoom * (window.devicePixelRatio || 1));
-    const width = Math.max(1, Math.min(embCanvas.width, Math.ceil(sourceAsset.width * density)));
-    const height = Math.max(1, Math.min(embCanvas.height, Math.ceil(sourceAsset.height * density)));
-    if (targetCanvas.width !== width || targetCanvas.height !== height) {
-      targetCanvas.width = width;
-      targetCanvas.height = height;
+    // Preserve full native supersampled resolution from the engine
+    // ensuring pin-sharp micro-filaments, realistic needle punctures, and zero downscale blur
+    if (targetCanvas.width !== embCanvas.width || targetCanvas.height !== embCanvas.height) {
+      targetCanvas.width = embCanvas.width;
+      targetCanvas.height = embCanvas.height;
     }
 
     const ctx = targetCanvas.getContext('2d');
@@ -189,7 +263,7 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
       ctx.beginPath();
       ctx.rect(splitX, 0, targetCanvas.width - splitX, targetCanvas.height);
       ctx.clip();
-      ctx.drawImage(embCanvas, 0, 0, width, height);
+      ctx.drawImage(embCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
       ctx.restore();
 
       // High-contrast Divider Line
@@ -200,9 +274,9 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
       ctx.lineTo(splitX, targetCanvas.height);
       ctx.stroke();
     } else {
-      ctx.drawImage(embCanvas, 0, 0, width, height);
+      ctx.drawImage(embCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
     }
-  }, [showComparison, splitPos, isPreviewMode, zoom, sourceAsset.width, sourceAsset.height]);
+  }, [showComparison, splitPos, isPreviewMode]);
 
   const drawFrameRef = useRef(drawCompositeFrame);
   drawFrameRef.current = drawCompositeFrame;
@@ -233,7 +307,11 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
 
       setLoadedSource(sourceAsset.dataUrl || '');
     }).catch(() => {
-      if (!cancelled) { setIsRendering(false); setRenderStats(current => ({ ...current, status: 'Could not load artwork' })); }
+      if (!cancelled) {
+        setIsRendering(false);
+        onSmartOptimizeCompleteRef.current?.();
+        setRenderStats(current => ({ ...current, status: 'Could not load artwork' }));
+      }
     });
     return () => { cancelled = true; };
   }, [sourceAsset.dataUrl]);
@@ -244,6 +322,7 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
     const source = sourceImgRef.current;
     if (nativeResultRef.current?.source === source && nativeResultRef.current.settings === settings) {
       setIsRendering(false);
+      onSmartOptimizeCompleteRef.current?.();
       drawFrameRef.current();
       return;
     }
@@ -279,7 +358,10 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
           setRenderStats(current => ({ ...current, status: error instanceof Error ? error.message : 'Render failed' }));
         }
       } finally {
-        if (generation === renderGenerationRef.current) setIsRendering(false);
+        if (generation === renderGenerationRef.current) {
+          setIsRendering(false);
+          onSmartOptimizeCompleteRef.current?.();
+        }
       }
     }, 120);
     return () => {
@@ -374,6 +456,14 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
         : 'cursor-zoom-in'
       : 'cursor-default';
 
+  const progressInfo = parseProgress(renderStats.status);
+  let overlayTitle = 'Rendering 3D Embroidery…';
+  if (isSmartActive) {
+    overlayTitle = 'Applying Smart Auto-Optimize…';
+  } else if (isSegmenting) {
+    overlayTitle = 'Detecting Artwork Objects…';
+  }
+
   return (
     <div className="flex-1 flex overflow-hidden bg-[#09090b]">
       {/* Central Viewport with Optional Rulers */}
@@ -448,6 +538,54 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Clean Studio Loading Overlay */}
+            {showLoadingOverlay && (
+              <div
+                className={`absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-200 pointer-events-none ${
+                  isOverlayFadingOut ? 'opacity-0' : 'opacity-100'
+                }`}
+              >
+                {/* Floating Minimal Studio Status Card */}
+                <div
+                  className={`flex flex-col items-center bg-[#121217]/95 border border-white/10 rounded-2xl p-5 shadow-2xl backdrop-blur-md min-w-[280px] max-w-sm pointer-events-auto transition-all duration-200 ${
+                    isOverlayFadingOut ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin shrink-0" />
+                    <span className="text-xs font-semibold text-white tracking-tight">
+                      {overlayTitle}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] font-mono text-neutral-400 mt-2 text-center truncate max-w-[260px]">
+                    {renderStats.status || 'Processing embroidery layers…'}
+                  </div>
+
+                  {progressInfo.percent !== null ? (
+                    <div className="w-full mt-3 space-y-1">
+                      <div className="flex justify-between items-center text-[10px] font-mono text-neutral-400 px-0.5">
+                        <span>Object Detection</span>
+                        <span className="text-neutral-200 font-semibold">{progressInfo.percent}%</span>
+                      </div>
+                      <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-white rounded-full transition-all duration-150"
+                          style={{ width: `${progressInfo.percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full mt-3">
+                      <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-1/2 animate-shimmer" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Floating Top Left Split View Tag */}
             {showComparison && !isPreviewMode && (
@@ -567,6 +705,9 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
         currentHistoryIndex={currentHistoryIndex}
         onRevertHistory={onRevertHistory}
         onTriggerSmartOptimize={onTriggerSmartOptimize}
+        onSaveSettingsAsDefault={onSaveSettingsAsDefault}
+        onResetSettingsToDefault={onResetSettingsToDefault}
+        saveStatusText={saveStatusText}
       />
     </div>
   );

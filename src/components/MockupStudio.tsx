@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   MockupTemplate,
   MockupTransform,
@@ -24,7 +24,6 @@ import {
   EyeOff
 } from 'lucide-react';
 
-const MOCKUP_LAYOUT_SIZE = 1200;
 const PREVIEW_SUPERSAMPLE = 2;
 const HIGH_QUALITY_SETTLE_MS = 140;
 
@@ -33,10 +32,15 @@ interface MockupStudioProps {
   settings: EmbroiderySettings;
   mockupTemplate: MockupTemplate;
   transform: MockupTransform;
+  templates?: MockupTemplate[];
   onSelectMockup: (mockup: MockupTemplate) => void;
   onUpdateTransform: (updated: Partial<MockupTransform>) => void;
   onUploadCustomMockup: (template: MockupTemplate) => void;
+  onOpenMockupsFolder?: () => void;
+  onRefreshMockups?: () => void;
+  isRefreshingMockups?: boolean;
   activeTool: ToolType;
+  zoomMode?: 'in' | 'out';
   zoom: number;
   onZoomChange: (z: number) => void;
   onResetZoom: () => void;
@@ -45,6 +49,9 @@ interface MockupStudioProps {
   isPreviewMode: boolean;
   onTogglePreviewMode: () => void;
   onOpenExport: () => void;
+  onSaveSettingsAsDefault?: (target?: 'all' | 'embroidery' | 'mockup') => void;
+  onResetSettings?: () => void;
+  saveStatusText?: string;
 }
 
 export const MockupStudio: React.FC<MockupStudioProps> = ({
@@ -52,10 +59,15 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   settings,
   mockupTemplate,
   transform,
+  templates,
   onSelectMockup,
   onUpdateTransform,
   onUploadCustomMockup,
+  onOpenMockupsFolder,
+  onRefreshMockups,
+  isRefreshingMockups = false,
   activeTool,
+  zoomMode = 'in',
   zoom,
   onZoomChange,
   onResetZoom,
@@ -63,7 +75,10 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   showRulers,
   isPreviewMode,
   onTogglePreviewMode,
-  onOpenExport
+  onOpenExport,
+  onSaveSettingsAsDefault,
+  onResetSettings,
+  saveStatusText
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mockupCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -107,6 +122,22 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
 
   const [cursorCoord, setCursorCoord] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
+
+  const [mockupDimensions, setMockupDimensions] = useState<{ width: number; height: number }>({
+    width: mockupTemplate.width || 1200,
+    height: mockupTemplate.height || 1200
+  });
+
+  useEffect(() => {
+    setMockupDimensions({
+      width: mockupTemplate.width || 1200,
+      height: mockupTemplate.height || 1200
+    });
+    setPan({ x: 0, y: 0 });
+  }, [mockupTemplate.id, mockupTemplate.width, mockupTemplate.height]);
+
+  const layoutWidth = mockupDimensions.width || 1200;
+  const layoutHeight = mockupDimensions.height || 1200;
 
   // Space Bar Hold Listener for Hand Pan
   useEffect(() => {
@@ -199,6 +230,12 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     img.onload = () => {
       if (cancelled) return;
       mockupImgRef.current = img;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setMockupDimensions({
+          width: img.naturalWidth,
+          height: img.naturalHeight
+        });
+      }
       renderCompositeMockup();
     };
     img.onerror = () => { if (!cancelled) setRenderStatus('Could not load garment'); };
@@ -209,16 +246,27 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   const renderCompositeMockup = useCallback(async (renderScale: number = PREVIEW_SUPERSAMPLE, skipDisplacement: boolean = false) => {
     if (!mockupImgRef.current || !embroideryCanvasRef.current || !mockupCanvasRef.current) return;
 
-    const renderWidth = Math.round(MOCKUP_LAYOUT_SIZE * renderScale);
-    const renderHeight = Math.round(MOCKUP_LAYOUT_SIZE * renderScale);
+    const naturalW = mockupImgRef.current.naturalWidth || mockupDimensions.width || 1200;
+    const naturalH = mockupImgRef.current.naturalHeight || mockupDimensions.height || 1200;
+
+    const currentLayoutW = naturalW;
+    const currentLayoutH = naturalH;
+
+    // Fast, supersampled preview bounded safely to 4K max dimension
+    const maxDim = Math.max(naturalW, naturalH);
+    const maxPreviewDim = 3840;
+    const effectiveScale = maxDim * renderScale > maxPreviewDim ? maxPreviewDim / maxDim : renderScale;
+
+    const renderWidth = Math.max(50, Math.round(currentLayoutW * effectiveScale));
+    const renderHeight = Math.max(50, Math.round(currentLayoutH * effectiveScale));
 
     const generation = ++composeGenerationRef.current;
     compositionRenderer.current?.cancel();
     try {
       const options = {
         embroideryRenderScale: embroideryScaleRef.current,
-        layoutWidth: MOCKUP_LAYOUT_SIZE,
-        layoutHeight: MOCKUP_LAYOUT_SIZE,
+        layoutWidth: currentLayoutW,
+        layoutHeight: currentLayoutH,
         skipDisplacement
       };
       // The interactive pass is only a bounded canvas blit. Full displacement
@@ -246,7 +294,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     } catch (error) {
       if (generation === composeGenerationRef.current && !isRenderCancelled(error)) setRenderStatus(error instanceof Error ? error.message : 'Mockup failed');
     }
-  }, []);
+  }, [mockupDimensions.width, mockupDimensions.height]);
 
   useEffect(() => {
     // When actively dragging, rotating, or scaling the gizmo, skip heavy displacement
@@ -277,8 +325,8 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     compositionRenderer.current?.dispose();
   }, []);
 
-  const posX = (transform.x / 100) * MOCKUP_LAYOUT_SIZE;
-  const posY = (transform.y / 100) * MOCKUP_LAYOUT_SIZE;
+  const posX = (transform.x / 100) * layoutWidth;
+  const posY = (transform.y / 100) * layoutHeight;
   const boxW = sourceAsset.width * transform.scale;
   const boxH = sourceAsset.height * transform.scale;
 
@@ -295,9 +343,16 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   }, [zoom, onZoomChange]);
 
   const handleContainerMouseDown = (e: React.MouseEvent) => {
-    if (isSpaceHeld || e.button === 1) {
+    if (isSpaceHeld || activeTool === 'hand' || e.button === 1) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    } else if (activeTool === 'zoom') {
+      const isZoomOut = zoomMode === 'out' || e.altKey || e.button === 2;
+      if (isZoomOut) {
+        onZoomChange(Math.max(0.05, parseFloat((zoom * 0.75).toFixed(2))));
+      } else {
+        onZoomChange(Math.min(5.0, parseFloat((zoom * 1.3).toFixed(2))));
+      }
     }
   };
 
@@ -397,10 +452,14 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   }, [isPanning, panStart, interactionMode, dragStartPos, initialTransform, zoom, transform, onUpdateTransform]);
 
   const containerCursor =
-    isSpaceHeld
+    isSpaceHeld || activeTool === 'hand'
       ? isPanning
         ? 'cursor-grabbing'
         : 'cursor-grab'
+      : activeTool === 'zoom'
+      ? zoomMode === 'out'
+        ? 'cursor-zoom-out'
+        : 'cursor-zoom-in'
       : 'cursor-default';
 
   return (
@@ -441,16 +500,16 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
             <div
               className="relative shadow-2xl flex items-center justify-center pointer-events-none will-change-transform"
               style={{
-                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom * 0.65})`,
+                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: 'center center'
               }}
             >
               <canvas
                 ref={mockupCanvasRef}
-                width={MOCKUP_LAYOUT_SIZE * PREVIEW_SUPERSAMPLE}
-                height={MOCKUP_LAYOUT_SIZE * PREVIEW_SUPERSAMPLE}
-                className="rounded-2xl shadow-2xl border border-white/[0.08]"
-                style={{ width: `${MOCKUP_LAYOUT_SIZE}px`, height: `${MOCKUP_LAYOUT_SIZE}px` }}
+                width={layoutWidth}
+                height={layoutHeight}
+                className="rounded-none shadow-2xl border border-white/10 max-w-none"
+                style={{ width: `${layoutWidth}px`, height: `${layoutHeight}px` }}
               />
 
               {/* Interactive Bounding Box Gizmo (Hidden in Preview Mode) */}
@@ -556,7 +615,10 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
               </button>
               <div className="w-[1px] h-3.5 bg-white/[0.08] mx-0.5" />
               <button
-                onClick={onFitToScreen}
+                onClick={() => {
+                  setPan({ x: 0, y: 0 });
+                  onFitToScreen();
+                }}
                 className="p-1 text-neutral-400 hover:text-white rounded transition-colors"
                 title="Fit to Window (Ctrl+0)"
               >
@@ -621,9 +683,16 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
           <MockupControls
             currentMockup={mockupTemplate}
             transform={transform}
+            templates={templates}
             onSelectMockup={onSelectMockup}
             onUpdateTransform={onUpdateTransform}
             onUploadCustomMockup={onUploadCustomMockup}
+            onOpenMockupsFolder={onOpenMockupsFolder}
+            onRefreshMockups={onRefreshMockups}
+            isRefreshing={isRefreshingMockups}
+            onSaveSettingsAsDefault={onSaveSettingsAsDefault}
+            onResetSettings={onResetSettings}
+            saveStatusText={saveStatusText}
           />
         </div>
       </div>

@@ -14,6 +14,7 @@ interface ExportModalProps {
   settings: EmbroiderySettings;
   transform: MockupTransform;
   activeScreen: 'embroidery' | 'mockup' | 'create';
+  defaultIncludeMockup?: boolean;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -24,14 +25,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   mockupImage,
   settings,
   transform,
-  activeScreen
+  activeScreen,
+  defaultIncludeMockup
 }) => {
   const [options, setOptions] = useState<ExportOptions>({
     format: 'png',
     resolutionMultiplier: 2,
     transparentBackground: true,
     quality: 0.95,
-    includeMockup: activeScreen === 'mockup',
+    includeMockup: defaultIncludeMockup !== undefined ? defaultIncludeMockup : activeScreen === 'mockup',
     fileName: 'embroidery-design'
   });
 
@@ -44,11 +46,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setExportStatus(''); setExportedSuccess(false);
-      setOptions(current => ({ ...current, includeMockup: activeScreen === 'mockup',
-        resolutionMultiplier: sourceImage && sourceImage.width * sourceImage.height * 4 > MAX_RENDER_PIXELS ? 1 : current.resolutionMultiplier }));
+      setOptions(current => ({
+        ...current,
+        includeMockup: defaultIncludeMockup !== undefined ? defaultIncludeMockup : activeScreen === 'mockup',
+        resolutionMultiplier: sourceImage && sourceImage.width * sourceImage.height * 4 > MAX_RENDER_PIXELS ? 1 : current.resolutionMultiplier
+      }));
     }
     return () => { ++exportRevision.current; engineRef.current?.cancel(); setIsExporting(false); };
-  }, [isOpen]);
+  }, [isOpen, defaultIncludeMockup, activeScreen, sourceImage]);
 
   if (!isOpen || !sourceImage) return null;
 

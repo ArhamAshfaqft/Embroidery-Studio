@@ -19,7 +19,10 @@ export class ExportEngine {
     options: ExportOptions
   ) {
     // Export always uses the original artwork, never a preview raster.
-    return this.renderer.export(sourceImg, settings, options.resolutionMultiplier || 1,
+    const effectiveSettings: EmbroiderySettings = options.transparentBackground
+      ? { ...settings, fabricSubstrate: 'none' }
+      : settings;
+    return this.renderer.export(sourceImg, effectiveSettings, options.resolutionMultiplier || 1,
       getMimeType(options.format), options.quality, undefined, this.onProgress);
   }
 
@@ -31,11 +34,17 @@ export class ExportEngine {
     options: ExportOptions
   ) {
     const scale = options.resolutionMultiplier || 1;
-    const outputWidth = (mockupImg.naturalWidth || 1200) * scale;
-    const outputHeight = (mockupImg.naturalHeight || 1200) * scale;
+    const naturalW = mockupImg.naturalWidth || 1200;
+    const naturalH = mockupImg.naturalHeight || 1200;
+    const outputWidth = naturalW * scale;
+    const outputHeight = naturalH * scale;
+
+    const layoutWidth = naturalW;
+    const layoutHeight = naturalH;
+
     return this.renderer.export(sourceImg, settings, scale, getMimeType(options.format), options.quality, {
       garment: mockupImg, transform, width: outputWidth, height: outputHeight,
-      composition: { embroideryRenderScale: scale, layoutWidth: 1200, layoutHeight: 1200 }
+      composition: { embroideryRenderScale: scale, layoutWidth, layoutHeight }
     }, this.onProgress);
   }
 

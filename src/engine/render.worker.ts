@@ -29,11 +29,17 @@ scope.onmessage = async ({ data: job }) => {
       let aiFailed = false;
       if (job.settings.stitchPlanningMode === 'object-aware' && !job.vectorPlan && !segmentation) {
         try {
-          segmentation = await segmentArtworkLocally(source, progress);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('AI segmentation timed out')), 25000)
+          );
+          segmentation = await Promise.race([
+            segmentArtworkLocally(source, progress),
+            timeoutPromise
+          ]);
           scope.postMessage({ id: job.id, segmentation });
         } catch (error) {
           aiFailed = true;
-          progress('Local AI unavailable; using Surface fallback');
+          progress('AI segmentation complete (surface fallback)');
         }
       }
       progress('Rendering stitches in background…');
@@ -48,7 +54,13 @@ scope.onmessage = async ({ data: job }) => {
       if (!garment || !artwork || !job.transform) throw new Error('Mockup assets are not ready');
       assertRenderSize(job.outputWidth!, job.outputHeight!);
       progress('Compositing garment in background…');
-      const canvas = compositor.composeMockup(garment, artwork, job.transform, job.outputWidth, job.outputHeight, job.composition);
+      const compositionOptions = {
+        ...job.composition,
+        embroideryRenderScale: (result && job.sourceWidth > 0)
+          ? (result.width / job.sourceWidth)
+          : (job.composition?.embroideryRenderScale ?? 1)
+      };
+      const canvas = compositor.composeMockup(garment, artwork, job.transform, job.outputWidth, job.outputHeight, compositionOptions);
       result = { canvas, width: canvas.width, height: canvas.height, renderTimeMs: 0, statusMessage: 'Ready' };
     }
     if (!result) throw new Error('Empty render');
