@@ -37,10 +37,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 4,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2,
-      creviceShadowStrength: 2.5
+      displacementStrength: 4.5,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 3.0
     },
     placementZone: { x: 380, y: 340, width: 440, height: 380 }
   },
@@ -59,10 +59,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 4,
-      shadowIntensity: 1.4,
-      fabricTextureStrength: 2,
-      creviceShadowStrength: 2.2
+      displacementStrength: 4.5,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 2.8
     },
     placementZone: { x: 380, y: 340, width: 440, height: 380 }
   },
@@ -82,9 +82,9 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       opacity: 1,
       blendMode: 'normal',
       displacementStrength: 4.5,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2,
-      creviceShadowStrength: 3
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 3.0
     },
     placementZone: { x: 380, y: 320, width: 440, height: 320 }
   },
@@ -104,9 +104,9 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       opacity: 1,
       blendMode: 'normal',
       displacementStrength: 4.5,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2,
-      creviceShadowStrength: 2.8
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 3.0
     },
     placementZone: { x: 380, y: 320, width: 440, height: 320 }
   },
@@ -125,10 +125,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 4.2,
-      shadowIntensity: 1.4,
-      fabricTextureStrength: 2.2,
-      creviceShadowStrength: 2.6
+      displacementStrength: 4.5,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 3.0
     },
     placementZone: { x: 380, y: 320, width: 440, height: 350 }
   },
@@ -147,10 +147,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 3.8,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2.2,
-      creviceShadowStrength: 2.4
+      displacementStrength: 4.0,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 2.8
     },
     placementZone: { x: 380, y: 340, width: 440, height: 360 }
   },
@@ -169,10 +169,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 4,
-      shadowIntensity: 1.4,
-      fabricTextureStrength: 2,
-      creviceShadowStrength: 2.5
+      displacementStrength: 4.2,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 2.8
     },
     placementZone: { x: 380, y: 330, width: 440, height: 380 }
   },
@@ -191,10 +191,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 3,
-      shadowIntensity: 1.25,
+      displacementStrength: 3.2,
+      shadowIntensity: 0.5,
       fabricTextureStrength: 1.5,
-      creviceShadowStrength: 2
+      creviceShadowStrength: 2.2
     },
     placementZone: { x: 420, y: 340, width: 360, height: 240 }
   },
@@ -214,7 +214,7 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       opacity: 1,
       blendMode: 'normal',
       displacementStrength: 3.2,
-      shadowIntensity: 1.3,
+      shadowIntensity: 0.5,
       fabricTextureStrength: 1.8,
       creviceShadowStrength: 2.2
     },
@@ -236,8 +236,8 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       opacity: 1,
       blendMode: 'normal',
       displacementStrength: 3.5,
-      shadowIntensity: 1.4,
-      fabricTextureStrength: 2.4,
+      shadowIntensity: 0.5,
+      fabricTextureStrength: 2.2,
       creviceShadowStrength: 2.5
     },
     placementZone: { x: 410, y: 400, width: 380, height: 240 }
@@ -258,9 +258,9 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       opacity: 1,
       blendMode: 'normal',
       displacementStrength: 4.5,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2.5,
-      creviceShadowStrength: 2.8
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.4,
+      creviceShadowStrength: 3.0
     },
     placementZone: { x: 360, y: 290, width: 480, height: 430 }
   },
@@ -280,8 +280,8 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       opacity: 1,
       blendMode: 'normal',
       displacementStrength: 4.2,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
       creviceShadowStrength: 2.8
     },
     placementZone: { x: 360, y: 290, width: 480, height: 430 }
@@ -301,10 +301,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 4,
-      shadowIntensity: 1.4,
-      fabricTextureStrength: 2.4,
-      creviceShadowStrength: 2.5
+      displacementStrength: 4.2,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.2,
+      creviceShadowStrength: 2.8
     },
     placementZone: { x: 380, y: 400, width: 440, height: 400 }
   },
@@ -323,10 +323,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 3.8,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2.2,
-      creviceShadowStrength: 2.6
+      displacementStrength: 4.0,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 2.8
     },
     placementZone: { x: 390, y: 380, width: 420, height: 360 }
   },
@@ -345,10 +345,10 @@ export const MOCKUP_TEMPLATES: MockupTemplate[] = [
       rotation: 0,
       opacity: 1,
       blendMode: 'normal',
-      displacementStrength: 4.2,
-      shadowIntensity: 1.5,
-      fabricTextureStrength: 2.2,
-      creviceShadowStrength: 2.6
+      displacementStrength: 4.5,
+      shadowIntensity: 0.6,
+      fabricTextureStrength: 2.0,
+      creviceShadowStrength: 2.8
     },
     placementZone: { x: 400, y: 290, width: 400, height: 380 }
   }
@@ -452,24 +452,37 @@ export class MockupRenderer {
     ctx.translate(posX, posY);
     ctx.rotate(rotRad);
 
-    // 4. Realistic Fabric Contact Drop Shadow
+    // 4. Photorealistic Fabric Contact Occlusion (Zero Floating Drop Shadow)
     if (transform.shadowIntensity > 0) {
-      ctx.save();
-      // Thread sits against the cloth; a wide, opaque drop shadow makes it look
-      // like a paper cut-out floating above the garment. Keep this a very tight
-      // contact occlusion and let the fold map below supply the larger shading.
-      ctx.shadowColor = `rgba(0, 0, 0, ${(transform.shadowIntensity / 10) * 0.28})`;
-      ctx.shadowBlur = (0.6 + transform.shadowIntensity * 0.7) * outputScale;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = (0.25 + transform.shadowIntensity * 0.2) * outputScale;
-      ctx.globalAlpha = transform.opacity;
+      // Thread penetrates directly into the garment weave — there is NO floating
+      // drop shadow. Instead, we compute tight, localized contact ambient occlusion (AO)
+      // that seats the outer perimeter of the stitches into the cloth depressions.
+      const maskCanvas = createRenderCanvas();
+      maskCanvas.width = drawW;
+      maskCanvas.height = drawH;
+      const maskCtx = maskCanvas.getContext('2d');
+      if (maskCtx) {
+        maskCtx.drawImage(finalEmbroiderySource, 0, 0, drawW, drawH);
+        maskCtx.globalCompositeOperation = 'source-in';
+        maskCtx.fillStyle = '#000000';
+        maskCtx.fillRect(0, 0, drawW, drawH);
 
-      // Draw shadow silhouette
-      ctx.drawImage(finalEmbroiderySource, drawX, drawY, drawW, drawH);
-      ctx.restore();
+        const contactDist = (0.2 + (transform.shadowIntensity / 10) * 0.75) * outputScale;
+        const contactBlur = Math.max(0.6, (0.5 + (transform.shadowIntensity / 10) * 1.25) * outputScale);
+        const contactAlpha = Math.min(0.35, (transform.shadowIntensity / 10) * 0.30) * transform.opacity;
+
+        ctx.save();
+        ctx.globalAlpha = contactAlpha;
+        if (typeof ctx.filter !== 'undefined') {
+          ctx.filter = `blur(${contactBlur.toFixed(2)}px)`;
+        }
+        // Micro contact offset in key-light direction (45 deg down-right)
+        ctx.drawImage(maskCanvas, drawX + contactDist * 0.45, drawY + contactDist * 0.75, drawW, drawH);
+        ctx.restore();
+      }
     }
 
-    // 5. Draw Embroidery Graphic with selected Blend Mode & Opacity
+    // 5. Draw Embroidery Graphic ONCE with selected Blend Mode & Opacity
     ctx.globalAlpha = transform.opacity;
     ctx.globalCompositeOperation = transform.blendMode === 'normal' ? 'source-over' : (transform.blendMode as GlobalCompositeOperation);
     ctx.drawImage(finalEmbroiderySource, drawX, drawY, drawW, drawH);
@@ -513,10 +526,9 @@ export class MockupRenderer {
     const embData = dispCtx.getImageData(0, 0, embW, embH);
     const embPixels = embData.data;
 
-    // The embroidery is drawn rotated after this pass.  Sampling the garment as
-    // an axis-aligned rectangle (the old approach) made folds slide across the
-    // design when it was rotated. Sample in image coordinates instead, so every
-    // stitch receives the exact fabric/lighting that is underneath it.
+    // The embroidery is drawn rotated after this pass. Sampling the garment in
+    // image coordinates ensures every stitch receives the exact fabric/lighting
+    // that is underneath it regardless of rotation angle.
     const cos = Math.cos(rotation);
     const sin = Math.sin(rotation);
     const localToImage = (localX: number, localY: number) => ({
@@ -556,8 +568,20 @@ export class MockupRenderer {
       return 0.299 * gPixels[idx] + 0.587 * gPixels[idx + 1] + 0.114 * gPixels[idx + 2];
     };
 
-    // 3x3 binomial-smoothed luminance map removes camera noise and JPEG compression
-    // artifacts before derivative calculation (matching Raven Mockup Studio's blur filter)
+    // Calculate baseline ambient garment luminance across the placed area
+    let totalGarmentLum = 0;
+    let garmentSampleCount = 0;
+    const lumStep = Math.max(1, Math.floor(sceneWidth / 24));
+    for (let sy = 0; sy < garmentData.height; sy += lumStep) {
+      for (let sx = 0; sx < sceneWidth; sx += lumStep) {
+        const sidx = (sy * sceneWidth + sx) * 4;
+        totalGarmentLum += 0.299 * gPixels[sidx] + 0.587 * gPixels[sidx + 1] + 0.114 * gPixels[sidx + 2];
+        garmentSampleCount++;
+      }
+    }
+    const ambientGarmentLum = garmentSampleCount > 0 ? totalGarmentLum / garmentSampleCount : 128;
+
+    // 3x3 binomial-smoothed luminance map removes camera sensor noise before derivative calculation
     const getSmoothLum = (gx: number, gy: number): number => {
       return (
         getRawLum(gx - 1, gy - 1) + 2 * getRawLum(gx, gy - 1) + getRawLum(gx + 1, gy - 1) +
@@ -566,16 +590,18 @@ export class MockupRenderer {
       ) / 16;
     };
 
-    // Radii for Multi-Scale Sobel Octaves:
-    // Fine (2px): micro threads, seam ridges, small creases
-    // Medium (6px): visible garment wrinkles and folds
-    // Coarse (16px): deep fabric draping and body contour curves
+    // Multi-Scale Sobel Radii calibrated to physical garment proportions:
+    // Fine (2-3px): seam ridges and micro-creases
+    // Medium (8-12px): prominent garment wrinkles and folds
+    // Coarse (24-36px): deep fabric draping across chest and body contour
     const rFine = Math.max(1, Math.round(2 * outputScale));
-    const rMed = Math.max(2, Math.round(6 * outputScale));
-    const rCoarse = Math.max(4, Math.round(16 * outputScale));
+    const rMed = Math.max(3, Math.round(8 * outputScale));
+    const rCoarse = Math.max(8, Math.round(24 * outputScale));
 
-    // Directional displacement amplitude scale (calibrated for real cloth flex)
-    const dispFactor = (warpStrength / 10) * 18.0 * outputScale;
+    // Directional displacement amplitude scale:
+    // Calibrated so warpStrength 4 produces visible 6-9px physical wrap conforming to folds,
+    // and warpStrength 10 produces deep 18-24px dramatic fabric conformance.
+    const dispFactor = (warpStrength / 10) * 165.0 * outputScale;
     const creviceFactor = (creviceStrength / 10);
     const textFactor = (textureStrength / 10);
 
@@ -586,21 +612,21 @@ export class MockupRenderer {
         if (alpha === 0) continue;
 
         // 1. Multi-scale Sobel Octaves on smoothed fabric luminance
-        // Fine
+        // Fine (seams & micro-creases)
         const f_tl = getSmoothLum(x - rFine, y - rFine), f_tc = getSmoothLum(x, y - rFine), f_tr = getSmoothLum(x + rFine, y - rFine);
         const f_ml = getSmoothLum(x - rFine, y),                                            f_mr = getSmoothLum(x + rFine, y);
         const f_bl = getSmoothLum(x - rFine, y + rFine), f_bc = getSmoothLum(x, y + rFine), f_br = getSmoothLum(x + rFine, y + rFine);
         const f_gx = (f_tr + 2 * f_mr + f_br - (f_tl + 2 * f_ml + f_bl)) / 1020;
         const f_gy = (f_bl + 2 * f_bc + f_br - (f_tl + 2 * f_tc + f_tr)) / 1020;
 
-        // Medium
+        // Medium (visible garment wrinkles & folds)
         const m_tl = getSmoothLum(x - rMed, y - rMed), m_tc = getSmoothLum(x, y - rMed), m_tr = getSmoothLum(x + rMed, y - rMed);
         const m_ml = getSmoothLum(x - rMed, y),                                            m_mr = getSmoothLum(x + rMed, y);
         const m_bl = getSmoothLum(x - rMed, y + rMed), m_bc = getSmoothLum(x, y + rMed), m_br = getSmoothLum(x + rMed, y + rMed);
         const m_gx = (m_tr + 2 * m_mr + m_br - (m_tl + 2 * m_ml + m_bl)) / 1020;
         const m_gy = (m_bl + 2 * m_bc + m_br - (m_tl + 2 * m_tc + m_tr)) / 1020;
 
-        // Coarse
+        // Coarse (chest drape & large fabric curves)
         const c_tl = getSmoothLum(x - rCoarse, y - rCoarse), c_tc = getSmoothLum(x, y - rCoarse), c_tr = getSmoothLum(x + rCoarse, y - rCoarse);
         const c_ml = getSmoothLum(x - rCoarse, y),                                                  c_mr = getSmoothLum(x + rCoarse, y);
         const c_bl = getSmoothLum(x - rCoarse, y + rCoarse), c_bc = getSmoothLum(x, y + rCoarse), c_br = getSmoothLum(x + rCoarse, y + rCoarse);
@@ -608,8 +634,8 @@ export class MockupRenderer {
         const c_gy = (c_bl + 2 * c_bc + c_br - (c_tl + 2 * c_tc + c_tr)) / 1020;
 
         // Balanced gradient combination: Coarse & Medium drive bulk fabric warp; Fine gives subtle micro-flex
-        const gradX = f_gx * 0.15 + m_gx * 0.45 + c_gx * 0.40;
-        const gradY = f_gy * 0.15 + m_gy * 0.45 + c_gy * 0.40;
+        const gradX = f_gx * 0.12 + m_gx * 0.50 + c_gx * 0.38;
+        const gradY = f_gy * 0.12 + m_gy * 0.50 + c_gy * 0.38;
 
         // 2. Displace sampling coordinates
         const srcX = Math.max(0, Math.min(embW - 1, x + gradX * dispFactor));
@@ -638,37 +664,27 @@ export class MockupRenderer {
         if (sampledAlpha <= 0) continue;
 
         // 3. Garment Crevice Shadowing & Ridge Highlights
+        // Compares local fold brightness against ambient garment lighting so dark folds visibly shade the stitches
         const centerLum = getRawLum(x, y);
-        const localCoarseAvg = (c_tl + c_tc + c_tr + c_ml + c_mr + c_bl + c_bc + c_br) / 8;
-        const relLum = (centerLum + 8) / (localCoarseAvg + 8);
-        const foldShadow = Math.max(0.48, Math.min(1.0, 1.0 + (relLum - 1.0) * creviceFactor * 0.85));
-        const ridgeHighlight = Math.max(0, (relLum - 1.0)) * 28.0 * (creviceFactor * 0.5);
+        const localSmoothLum = getSmoothLum(x, y);
+        const garmentRelLight = (localSmoothLum + 12) / (ambientGarmentLum + 12);
+
+        let foldShadeMultiplier = 1.0;
+        if (garmentRelLight < 1.0) {
+          // In a fold shadow: darken the embroidery in tandem with the garment crease
+          foldShadeMultiplier = Math.max(0.38, 1.0 - (1.0 - garmentRelLight) * creviceFactor * 1.15);
+        } else {
+          // On a fold ridge: catch ambient specular highlight along the crease apex
+          foldShadeMultiplier = Math.min(1.22, 1.0 + (garmentRelLight - 1.0) * creviceFactor * 0.40);
+        }
 
         // 4. Fabric Grain & Weave High-Pass Texture
-        // Extract photographic garment high-pass texture + tactile structural yarn weave
-        const smoothCenter = getSmoothLum(x, y);
-        const photoGrainDiff = (centerLum - smoothCenter) * 8.5;
+        // Extracts the photograph's authentic fabric fibers/weave directly from garment image
+        const photoGrainDiff = (centerLum - localSmoothLum);
+        const fabricGrainSignal = (photoGrainDiff / 128.0) * textFactor * 0.70;
+        const grainMultiplier = Math.max(0.70, Math.min(1.30, 1.0 + fabricGrainSignal));
 
-        // Textile yarn interlace pattern anchored to garment coordinate space
-        const mapped = localToImage(x, y);
-        const absX = mapped.x;
-        const absY = mapped.y;
-        const weaveScale = 1.35 / Math.max(0.4, outputScale);
-        const wx = absX * weaveScale;
-        const wy = absY * weaveScale;
-        // Warp/weft yarn interlace + diagonal twill ribs (matching authentic garment weaves)
-        const yarnOverUnder = Math.sin(wx) * Math.cos(wy);
-        const twillRib = Math.sin((wx + wy) * 0.707) * 0.6;
-        const yarnWeave = (yarnOverUnder + twillRib) * 48.0;
-
-        // Combined fabric grain signal scaled by the Cloth Weave Grain slider
-        const fabricGrainSignal = (photoGrainDiff * 0.85 + yarnWeave * 0.80) * textFactor;
-
-        // Normalized texture map in [0, 1] where 0.5 is neutral gray (no modification)
-        const texMap = Math.max(0.05, Math.min(0.95, 0.5 + fabricGrainSignal / 255));
-        const blendWeight = Math.min(1.0, textFactor * 0.95);
-
-        // 5. Compose realistic channels with Hard-Light Fabric Weave & Fold Shading
+        // 5. Compose realistic channels with Fabric Weave & Fold Shading
         for (let channel = 0; channel < 3; channel++) {
           const premultiplied =
             w00 * embPixels[i00 + channel] * a00 +
@@ -676,22 +692,10 @@ export class MockupRenderer {
             w01 * embPixels[i01 + channel] * a01 +
             w11 * embPixels[i11 + channel] * a11;
           const baseColor = (premultiplied / sampledAlpha);
-          const B = Math.max(0, Math.min(1, baseColor / 255));
 
-          // Hard-Light blending: 0.5 leaves color unchanged, peaks illuminate threads, grooves indent depth
-          let hl: number;
-          if (texMap <= 0.5) {
-            hl = 2 * B * texMap;
-          } else {
-            hl = 1 - 2 * (1 - B) * (1 - texMap);
-          }
-
-          // Interpolate according to Cloth Weave Grain slider
-          const textured = B * (1 - blendWeight) + hl * blendWeight;
-
-          // Apply fold crevice shadowing and ridge highlights
-          const shaded = textured * foldShadow + (ridgeHighlight / 255);
-          outPixels[idx + channel] = Math.min(255, Math.max(0, Math.round(shaded * 255)));
+          // Apply photographic cloth grain modulation and fold crease lighting
+          const integrated = baseColor * grainMultiplier * foldShadeMultiplier;
+          outPixels[idx + channel] = Math.min(255, Math.max(0, Math.round(integrated)));
         }
         outPixels[idx + 3] = Math.round(sampledAlpha * 255);
       }

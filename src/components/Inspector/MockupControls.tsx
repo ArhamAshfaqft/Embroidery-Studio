@@ -281,7 +281,7 @@ export const MockupControls: React.FC<MockupControlsProps> = ({
           min={0}
           max={10}
           step={0.5}
-          defaultValue={4}
+          defaultValue={4.5}
           onChange={(displacementStrength: number) => onUpdateTransform({ displacementStrength })}
         />
 
@@ -297,21 +297,21 @@ export const MockupControls: React.FC<MockupControlsProps> = ({
 
         <SliderControl
           label="Fold Shadow Depth"
-          value={transform.creviceShadowStrength ?? 2.5}
+          value={transform.creviceShadowStrength ?? 3}
           min={0}
           max={10}
           step={0.5}
-          defaultValue={2.5}
+          defaultValue={3}
           onChange={(creviceShadowStrength: number) => onUpdateTransform({ creviceShadowStrength })}
         />
 
         <SliderControl
-          label="Fabric Contact Shadow"
+          label="Fabric Contact Occlusion"
           value={transform.shadowIntensity}
           min={0}
           max={10}
           step={0.5}
-          defaultValue={1.5}
+          defaultValue={0.6}
           onChange={(shadowIntensity: number) => onUpdateTransform({ shadowIntensity })}
         />
 

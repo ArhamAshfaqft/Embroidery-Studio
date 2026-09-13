@@ -78,7 +78,7 @@ export function knockoutNeutralEdgeBackground(
     if (distanceSq > toleranceSq) continue;
 
     const ratio = Math.sqrt(distanceSq / toleranceSq);
-    data[index + 3] = ratio < 0.72 ? 0 : Math.round(255 * (ratio - 0.72) / 0.28);
+    data[index + 3] = ratio < 0.85 ? 0 : Math.round(255 * (ratio - 0.85) / 0.15);
     removed++;
     const x = pixel % width;
     const y = Math.floor(pixel / width);

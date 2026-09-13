@@ -550,64 +550,19 @@ export class ThreadStudioRenderer {
     layerCtx.drawImage(srcCanvas, 0, 0, renderW, renderH);
     layerCtx.globalCompositeOperation = 'source-over';
 
-    // 7. Composite final embroidery canvas with underlay and depth emboss
+    // 7. Composite final embroidery canvas with underlay
     const previewCanvas = createRenderCanvas();
     previewCanvas.width = renderW;
     previewCanvas.height = renderH;
     const pCtx = previewCanvas.getContext('2d') as CanvasRenderingContext2D;
 
-    // 7a. 3D Emboss Depth (Drop Shadow & Specular Rim)
-    const embossDepth = (config.depth ?? 4.0) * 0.28;
-    if (embossDepth > 0) {
-      // Dark under-shadow
-      const dark = createRenderCanvas();
-      dark.width = renderW;
-      dark.height = renderH;
-      const dCtx = dark.getContext('2d') as CanvasRenderingContext2D;
-      dCtx.scale(RS, RS);
-      dCtx.drawImage(srcCanvas, 0, 0);
-      dCtx.setTransform(1, 0, 0, 1, 0, 0);
-      dCtx.globalCompositeOperation = 'source-in';
-      dCtx.fillStyle = 'rgba(0,0,0,.95)';
-      dCtx.fillRect(0, 0, dark.width, dark.height);
-
-      pCtx.save();
-      pCtx.globalAlpha = 0.16;
-      if (typeof pCtx.filter !== 'undefined') {
-        pCtx.filter = `blur(${Math.max(0.8, embossDepth * 0.65 * RS)}px)`;
-      }
-      pCtx.drawImage(dark, embossDepth * 0.7 * RS, embossDepth * 0.9 * RS);
-      pCtx.restore();
-
-      // Light rim highlight
-      const light = createRenderCanvas();
-      light.width = renderW;
-      light.height = renderH;
-      const lCtx = light.getContext('2d') as CanvasRenderingContext2D;
-      lCtx.scale(RS, RS);
-      lCtx.drawImage(srcCanvas, 0, 0);
-      lCtx.setTransform(1, 0, 0, 1, 0, 0);
-      lCtx.globalCompositeOperation = 'source-in';
-      lCtx.fillStyle = 'rgba(255,255,255,.7)';
-      lCtx.fillRect(0, 0, light.width, light.height);
-
-      pCtx.save();
-      pCtx.globalCompositeOperation = 'screen';
-      pCtx.globalAlpha = 0.05 + (config.shine / 100) * 0.08;
-      if (typeof pCtx.filter !== 'undefined') {
-        pCtx.filter = `blur(${Math.max(0.6, embossDepth * 0.4 * RS)}px)`;
-      }
-      pCtx.drawImage(light, -embossDepth * 0.25 * RS, -embossDepth * 0.3 * RS);
-      pCtx.restore();
-    }
-
-    // 7b. Solid 88% colored underlay (keeps dense stitched regions from looking like a wire grid)
+    // 7a. Solid 88% colored underlay (keeps dense stitched regions from looking like a wire grid)
     pCtx.save();
     pCtx.globalAlpha = 0.88;
     pCtx.drawImage(srcCanvas, 0, 0, renderW, renderH);
     pCtx.restore();
 
-    // 7c. Thread stitch layer
+    // 7b. Thread stitch layer
     pCtx.drawImage(layer, 0, 0);
 
     // 7d. Optional Running Outline

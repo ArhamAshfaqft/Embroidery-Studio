@@ -240,10 +240,10 @@ export async function syncMockupTemplatesWithDisk(
           rotation: 0,
           opacity: 1,
           blendMode: 'normal',
-          displacementStrength: category === 'hat' ? 3.0 : 4.0,
-          shadowIntensity: 1.5,
+          displacementStrength: category === 'hat' ? 3.5 : 4.5,
+          shadowIntensity: 0.6,
           fabricTextureStrength: 2.0,
-          creviceShadowStrength: 2.5
+          creviceShadowStrength: 3.0
         };
 
         const newTemplate: MockupTemplate = {
