@@ -3,6 +3,7 @@ import { SourceAsset, TextConfig } from '../types';
 import { loadSourceImage, retainUploadedImage } from '../engine/sourceImages';
 import { TextEditor } from './TextEditor';
 import { renderTextToCanvas, DEFAULT_TEXT_CONFIG } from '../engine/textRenderer';
+import { processFontFile } from '../engine/fontManager';
 import { removePlainBackground, hasSolidBackgroundBorders } from '../engine/imageUtils';
 import {
   Upload,
@@ -89,8 +90,23 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
 
   const handleFileUpload = async (file: File) => {
     const revision = ++uploadRevision.current;
+
+    // Check if the uploaded file is a custom font (.ttf, .otf, .woff, .woff2)
+    const isFont = /\.(ttf|otf|woff|woff2)$/i.test(file.name) || file.type.includes('font');
+    if (isFont) {
+      try {
+        const newFont = await processFontFile(file);
+        setTextConfig((prev) => ({ ...prev, fontFamily: newFont.family }));
+        setActiveTab('text');
+        return;
+      } catch (err: any) {
+        alert(err?.message || 'Could not load font file. Please upload a valid .ttf, .otf, or .woff font.');
+        return;
+      }
+    }
+
     if (!file.type.match(/image\/(png|jpeg|jpg|webp|svg\+xml)/i)) {
-      alert('Please upload a valid image file (PNG, JPG, JPEG, WebP, or SVG).');
+      alert('Please upload a valid image (PNG, JPG, WebP, SVG) or font file (.TTF, .OTF, .WOFF).');
       return;
     }
 
@@ -268,10 +284,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
                   <Upload size={18} className="text-white" />
                 </div>
                 <div className="text-xs font-semibold text-neutral-200 tracking-tight">
-                  Click to Browse or Drag Image
+                  Click to Browse or Drag Image / Font
                 </div>
                 <div className="text-[11px] text-neutral-400 mt-1">
-                  Supports transparent PNG, JPG, JPEG, WebP, SVG
+                  Supports PNG, JPG, WebP, SVG, and Custom Fonts (.TTF, .OTF)
                 </div>
                 <div className="mt-3 flex items-center space-x-1.5 text-[10px] font-mono text-neutral-400 bg-black/40 px-2.5 py-1 rounded-md border border-white/[0.06]">
                   <Clipboard size={10} className="text-neutral-500" />
@@ -280,7 +296,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml,.ttf,.otf,.woff,.woff2"
                   onChange={(e) => {
                     if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
                   }}

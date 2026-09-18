@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { MockupTemplate, MockupTransform } from '../../types';
+import { MockupTemplate, MockupTransform, SourceAsset } from '../../types';
 import { MOCKUP_TEMPLATES } from '../../engine/mockupRenderer';
 import { DEFAULT_FABRIC_BLEND } from '../../engine/fabricIntegration';
 import { SliderControl } from '../Controls/SliderControl';
@@ -13,13 +13,17 @@ import {
   FolderOpen,
   RefreshCw,
   Save,
-  ChevronUp
+  ChevronUp,
+  Type,
+  Edit3
 } from 'lucide-react';
 
 interface MockupControlsProps {
   currentMockup: MockupTemplate;
   transform: MockupTransform;
   templates?: MockupTemplate[];
+  sourceAsset?: SourceAsset;
+  onNavigateToSource?: () => void;
   onSelectMockup: (mockup: MockupTemplate) => void;
   onUpdateTransform: (updated: Partial<MockupTransform>) => void;
   onUploadCustomMockup: (template: MockupTemplate) => void;
@@ -35,6 +39,8 @@ export const MockupControls: React.FC<MockupControlsProps> = ({
   currentMockup,
   transform,
   templates = MOCKUP_TEMPLATES,
+  sourceAsset,
+  onNavigateToSource,
   onSelectMockup,
   onUpdateTransform,
   onUploadCustomMockup,
@@ -89,6 +95,38 @@ export const MockupControls: React.FC<MockupControlsProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Active Artwork & Font Quick Access */}
+      {sourceAsset && (
+        <div className="p-3 bg-[#131318] rounded-xl border border-white/[0.08] flex items-center justify-between shadow-sm">
+          <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+            <div className="w-7 h-7 rounded-lg bg-[#20202a] border border-white/10 flex items-center justify-center shrink-0">
+              <Type size={14} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-neutral-200 truncate">
+                {sourceAsset.type === 'text'
+                  ? `Text: "${sourceAsset.textConfig?.text || 'Embroidery'}"`
+                  : sourceAsset.name}
+              </div>
+              <div className="text-[10px] text-neutral-400 font-mono truncate">
+                {sourceAsset.type === 'text' ? 'Custom Typography & Font' : 'Imported Artwork'}
+              </div>
+            </div>
+          </div>
+          {onNavigateToSource && (
+            <button
+              type="button"
+              onClick={onNavigateToSource}
+              className="shrink-0 flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-[#22222c] border border-white/15 text-[11px] font-semibold text-white hover:bg-[#2c2c38] hover:border-white/30 transition-all shadow-sm cursor-pointer"
+              title="Edit text, font family, curved arch, and colors"
+            >
+              <Edit3 size={11} className="text-neutral-300" />
+              <span>{sourceAsset.type === 'text' ? 'Edit Text & Font' : 'Edit Artwork'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Apparel Template Grid */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">

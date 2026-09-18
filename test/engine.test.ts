@@ -2,6 +2,7 @@ import { findClosestThreadColor, hexToRgb, rgbToHex, THREAD_PALETTES } from '../
 import { EMBROIDERY_PRESETS, DEFAULT_EMBROIDERY_SETTINGS } from '../src/engine/presets';
 import { MOCKUP_TEMPLATES } from '../src/engine/mockupRenderer';
 import { FONT_OPTIONS, renderTextToCanvas, DEFAULT_TEXT_CONFIG } from '../src/engine/textRenderer';
+import { deriveFontFamilyNames, inferFontFormat, getAllFontOptions, CustomFontItem } from '../src/engine/fontManager';
 import { SmartOptimizer } from '../src/engine/smartOptimizer';
 import { computeAdaptiveStitchField } from '../src/engine/stitchField';
 import { generateStitchPlan } from '../src/engine/stitchPlanner';
@@ -95,10 +96,30 @@ assert(knockedOut > 0 && knockoutPixels[3] === 0, 'Neutral edge artboards are re
 assert(knockoutPixels[(12 * 4) + 3] === 255, 'Enclosed white artwork details survive background cleanup');
 
 // Test 4: Embroidery Lettering & Typography Engine
-console.log('\n4. Testing Embroidery Lettering Engine...');
+console.log('\n4. Testing Embroidery Lettering & Typography Engine...');
 assert(FONT_OPTIONS.length >= 8, 'Commercial embroidery fonts defined');
 const textResult = renderTextToCanvas(DEFAULT_TEXT_CONFIG, 1000, 600);
 assert(textResult.canvas.width === 1000 && Boolean(textResult.dataUrl), 'Text renderer generates high-res vector lettering canvas');
+
+// Custom Font Helpers
+const derived = deriveFontFamilyNames('collegiate_varsity_heavy.ttf');
+assert(derived.label === 'Collegiate Varsity Heavy', 'Font label cleanly formatted');
+assert(derived.rawFamilyName === 'CustomFont_collegiate_varsity_heavy', 'Safe CSS identifier generated');
+assert(inferFontFormat('my_font.otf') === 'opentype', 'OTF format detected correctly');
+assert(inferFontFormat('my_font.woff2') === 'woff2', 'WOFF2 format detected correctly');
+
+const customFontSample: CustomFontItem = {
+  id: 'font_123',
+  name: derived.label,
+  family: derived.family,
+  rawFamilyName: derived.rawFamilyName,
+  fileName: 'collegiate_varsity_heavy.ttf',
+  dataUrl: 'data:font/ttf;base64,AAA...',
+  format: 'truetype',
+  createdAt: Date.now()
+};
+const combined = getAllFontOptions([customFontSample]);
+assert(combined[0].isCustom === true && combined[0].name === 'Collegiate Varsity Heavy', 'Custom font placed at top of font list');
 
 // Test 5: Smart Analysis & Auto-Optimization Engine
 console.log('\n5. Testing Smart Analysis & Auto-Optimization Engine...');

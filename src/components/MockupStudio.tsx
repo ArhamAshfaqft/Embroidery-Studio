@@ -34,6 +34,7 @@ interface MockupStudioProps {
   mockupTemplate: MockupTemplate;
   transform: MockupTransform;
   templates?: MockupTemplate[];
+  onNavigateToSource?: () => void;
   onSelectMockup: (mockup: MockupTemplate) => void;
   onUpdateTransform: (updated: Partial<MockupTransform>) => void;
   onUploadCustomMockup: (template: MockupTemplate) => void;
@@ -61,6 +62,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
   mockupTemplate,
   transform,
   templates,
+  onNavigateToSource,
   onSelectMockup,
   onUpdateTransform,
   onUploadCustomMockup,
@@ -685,6 +687,8 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
             currentMockup={mockupTemplate}
             transform={transform}
             templates={templates}
+            sourceAsset={sourceAsset}
+            onNavigateToSource={onNavigateToSource}
             onSelectMockup={onSelectMockup}
             onUpdateTransform={onUpdateTransform}
             onUploadCustomMockup={onUploadCustomMockup}

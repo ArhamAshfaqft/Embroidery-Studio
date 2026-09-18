@@ -35,6 +35,7 @@ import {
   savePartialUserSettings,
   resetUserSettings
 } from './engine/settingsStorage';
+import { loadCustomFontsFromStorage } from './engine/fontManager';
 
 export const App: React.FC = () => {
   // Retained settings from previous user sessions
@@ -176,6 +177,11 @@ export const App: React.FC = () => {
       clearInterval(interval);
       window.removeEventListener('focus', updateAccess);
     };
+  }, []);
+
+  // Initialize and register all saved custom fonts on app launch
+  useEffect(() => {
+    void loadCustomFontsFromStorage();
   }, []);
 
   // Trigger Smart Analysis & Optimization
@@ -755,6 +761,7 @@ export const App: React.FC = () => {
               mockupTemplate={mockupTemplate}
               transform={transform}
               templates={mockupTemplates}
+              onNavigateToSource={() => setActiveScreen('create')}
               onSelectMockup={handleSelectMockup}
               onUpdateTransform={handleUpdateTransform}
               onUploadCustomMockup={handleUploadCustomMockup}

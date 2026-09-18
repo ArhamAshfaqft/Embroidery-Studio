@@ -1,17 +1,7 @@
 import { TextConfig } from '../types';
+import { BUILTIN_FONTS, FontOption } from './fontManager';
 
-export const FONT_OPTIONS = [
-  { name: 'Alfa Slab One', label: 'Varsity Block (Heavy)', family: "'Alfa Slab One', cursive" },
-  { name: 'Bebas Neue', label: 'Athletic Condensed', family: "'Bebas Neue', sans-serif" },
-  { name: 'Oswald', label: 'Heavyweight Sans', family: "'Oswald', sans-serif" },
-  { name: 'Montserrat', label: 'Modern Geometric Bold', family: "'Montserrat', sans-serif" },
-  { name: 'Cinzel', label: 'Classic Roman Serif', family: "'Cinzel', serif" },
-  { name: 'Playfair Display', label: 'Luxury Display Serif', family: "'Playfair Display', serif" },
-  { name: 'Alex Brush', label: 'Formal Calligraphy', family: "'Alex Brush', cursive" },
-  { name: 'Great Vibes', label: 'Flowing Script', family: "'Great Vibes', cursive" },
-  { name: 'Rye', label: 'Vintage Western', family: "'Rye', serif" },
-  { name: 'Inter', label: 'Clean Technical', family: "'Inter', sans-serif" }
-];
+export const FONT_OPTIONS: FontOption[] = BUILTIN_FONTS;
 
 export const DEFAULT_TEXT_CONFIG: TextConfig = {
   text: 'RAVEN STUDIO',
@@ -27,12 +17,97 @@ export const DEFAULT_TEXT_CONFIG: TextConfig = {
 };
 
 /**
- * Render text to a canvas element and return the data URL and canvas
+ * Trim transparent boundary pixels from canvas so custom text graphics
+ * are centered and framed nicely without giant blank padding.
  */
-export function renderTextToCanvas(config: TextConfig, targetWidth = 1000, targetHeight = 600): { canvas: HTMLCanvasElement; dataUrl: string } {
-  if (typeof document === 'undefined') {
-    return { canvas: { width: targetWidth, height: targetHeight } as HTMLCanvasElement, dataUrl: 'data:image/png;base64,placeholder' };
+export function trimTextCanvas(canvas: HTMLCanvasElement, padding = 24): HTMLCanvasElement {
+  if (typeof document === 'undefined') return canvas;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const { width, height } = canvas;
+  if (width <= 0 || height <= 0) return canvas;
+
+  try {
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const { data } = imgData;
+
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width * 4;
+      for (let x = 0; x < width; x++) {
+        const alpha = data[rowOffset + x * 4 + 3];
+        if (alpha > 8) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    // If completely blank or no text detected, return original
+    if (maxX < minX || maxY < minY) {
+      return canvas;
+    }
+
+    // Apply safety padding
+    const boundMinX = Math.max(0, minX - padding);
+    const boundMinY = Math.max(0, minY - padding);
+    const boundMaxX = Math.min(width - 1, maxX + padding);
+    const boundMaxY = Math.min(height - 1, maxY + padding);
+
+    const croppedWidth = boundMaxX - boundMinX + 1;
+    const croppedHeight = boundMaxY - boundMinY + 1;
+
+    // Minimum size to prevent 1px anomalies
+    if (croppedWidth < 10 || croppedHeight < 10) return canvas;
+
+    const trimmedCanvas = document.createElement('canvas');
+    trimmedCanvas.width = croppedWidth;
+    trimmedCanvas.height = croppedHeight;
+    const trimmedCtx = trimmedCanvas.getContext('2d');
+
+    if (trimmedCtx) {
+      trimmedCtx.drawImage(
+        canvas,
+        boundMinX,
+        boundMinY,
+        croppedWidth,
+        croppedHeight,
+        0,
+        0,
+        croppedWidth,
+        croppedHeight
+      );
+      return trimmedCanvas;
+    }
+  } catch {
+    // If security error (cross-origin) or memory error, fall back gracefully
   }
+
+  return canvas;
+}
+
+/**
+ * Render text to a canvas element and return the data URL and trimmed canvas
+ */
+export function renderTextToCanvas(
+  config: TextConfig,
+  targetWidth = 1400,
+  targetHeight = 900
+): { canvas: HTMLCanvasElement; dataUrl: string } {
+  if (typeof document === 'undefined') {
+    return {
+      canvas: { width: targetWidth, height: targetHeight } as HTMLCanvasElement,
+      dataUrl: 'data:image/png;base64,placeholder'
+    };
+  }
+
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
   canvas.height = targetHeight;
@@ -66,13 +141,22 @@ export function renderTextToCanvas(config: TextConfig, targetWidth = 1000, targe
     }
   }
 
+  // Auto-crop to content for tight, professional embroidery layout
+  const croppedCanvas = trimTextCanvas(canvas, 32);
+
   return {
-    canvas,
-    dataUrl: canvas.toDataURL('image/png')
+    canvas: croppedCanvas,
+    dataUrl: croppedCanvas.toDataURL('image/png')
   };
 }
 
-function drawSpacedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, letterSpacing: number) {
+function drawSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  letterSpacing: number
+) {
   if (letterSpacing === 0) {
     ctx.fillText(text, x, y);
     return;
@@ -108,7 +192,7 @@ function renderArchedText(
 
   const archRad = (config.archAngle * Math.PI) / 180;
   const isConvex = config.archAngle > 0;
-  
+
   // Calculate approximate radius based on text length and arch angle
   const totalLength = ctx.measureText(text).width + (chars.length - 1) * config.letterSpacing;
   const radius = Math.max(120, Math.abs(totalLength / archRad));
