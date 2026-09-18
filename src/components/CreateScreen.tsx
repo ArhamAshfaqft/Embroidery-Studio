@@ -49,16 +49,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const uploadRevision = useRef(0);
   const [dragOver, setDragOver] = useState(false);
 
-  // Compute live vector text asset on the fly
+  // Compute live high-resolution vector text asset on the fly
   const currentTextAsset = useMemo<SourceAsset>(() => {
-    const { dataUrl, canvas } = renderTextToCanvas(textConfig, 1000, 600);
+    const { dataUrl, logicalWidth, logicalHeight } = renderTextToCanvas(textConfig, 1400, 900, 3.0);
     return {
       id: 'text_custom',
       type: 'text',
       name: `Text: ${textConfig.text.slice(0, 16)}`,
       dataUrl,
-      width: canvas.width,
-      height: canvas.height,
+      width: logicalWidth,
+      height: logicalHeight,
       textConfig
     };
   }, [textConfig]);

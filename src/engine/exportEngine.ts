@@ -1,5 +1,6 @@
-import { ExportOptions, EmbroiderySettings, MockupTransform } from '../types';
+import { ExportOptions, EmbroiderySettings, MockupTransform, SourceAsset } from '../types';
 import { BackgroundRenderer } from './backgroundRenderer';
+import { sourceDimensions } from './renderCanvas';
 import type { SegmentationProgress } from './localSegmentation';
 import { getMockupEmbroiderySettings } from './mockupSettings';
 
@@ -32,7 +33,8 @@ export class ExportEngine {
     sourceImg: HTMLImageElement | HTMLCanvasElement,
     settings: EmbroiderySettings,
     transform: MockupTransform,
-    options: ExportOptions
+    options: ExportOptions,
+    sourceAsset?: SourceAsset
   ) {
     const scale = options.resolutionMultiplier || 1;
     const naturalW = mockupImg.naturalWidth || 1200;
@@ -43,9 +45,14 @@ export class ExportEngine {
     const layoutWidth = naturalW;
     const layoutHeight = naturalH;
 
+    const srcDim = sourceDimensions(sourceImg);
+    const embroideryRenderScale = sourceAsset && sourceAsset.width > 0
+      ? scale * (srcDim.width / sourceAsset.width)
+      : scale;
+
     return this.renderer.export(sourceImg, getMockupEmbroiderySettings(settings), scale, getMimeType(options.format), options.quality, {
       garment: mockupImg, transform, width: outputWidth, height: outputHeight,
-      composition: { embroideryRenderScale: scale, layoutWidth, layoutHeight }
+      composition: { embroideryRenderScale, layoutWidth, layoutHeight }
     }, this.onProgress);
   }
 

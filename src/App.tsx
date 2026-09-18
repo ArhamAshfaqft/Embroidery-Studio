@@ -790,6 +790,7 @@ export const App: React.FC = () => {
       <ExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
+        sourceAsset={sourceAsset}
         sourceImage={sourceImageElement}
         mockupTemplate={mockupTemplate}
         mockupImage={mockupImageElement}

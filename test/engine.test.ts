@@ -99,7 +99,7 @@ assert(knockoutPixels[(12 * 4) + 3] === 255, 'Enclosed white artwork details sur
 console.log('\n4. Testing Embroidery Lettering & Typography Engine...');
 assert(FONT_OPTIONS.length >= 8, 'Commercial embroidery fonts defined');
 const textResult = renderTextToCanvas(DEFAULT_TEXT_CONFIG, 1000, 600);
-assert(textResult.canvas.width === 1000 && Boolean(textResult.dataUrl), 'Text renderer generates high-res vector lettering canvas');
+assert(textResult.logicalWidth === 1000 && textResult.canvas.width === 3000 && Boolean(textResult.dataUrl), 'Text renderer generates high-res vector lettering canvas');
 
 // Custom Font Helpers
 const derived = deriveFontFamilyNames('collegiate_varsity_heavy.ttf');

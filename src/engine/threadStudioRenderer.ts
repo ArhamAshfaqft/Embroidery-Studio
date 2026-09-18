@@ -85,9 +85,10 @@ export class ThreadStudioRenderer {
     const srcWidth = sourceInfo?.width ?? dims.width;
     const srcHeight = sourceInfo?.height ?? dims.height;
 
-    // Normalize base dimension to ~1000px to match calibrated physical thread geometry
+    // Normalize base dimension to ~1000px to match calibrated physical thread geometry.
+    // For small artwork (<1000px), upscale up to 2.0x so thin lettering and strokes have sufficient pixel density for smooth thread paths
     const maxDim = 1000;
-    const s = Math.min(1, maxDim / Math.max(srcWidth, srcHeight));
+    const s = Math.min(2.0, maxDim / Math.max(srcWidth, srcHeight));
     const baseW = Math.max(1, Math.round(srcWidth * s));
     const baseH = Math.max(1, Math.round(srcHeight * s));
 

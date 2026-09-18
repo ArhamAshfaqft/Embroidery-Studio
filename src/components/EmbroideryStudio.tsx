@@ -296,8 +296,8 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
       if (containerRef.current) {
         const availableW = containerRef.current.clientWidth - 80;
         const availableH = containerRef.current.clientHeight - 80;
-        const imgW = img.naturalWidth || img.width;
-        const imgH = img.naturalHeight || img.height;
+        const imgW = sourceAsset.width || img.naturalWidth || img.width;
+        const imgH = sourceAsset.height || img.naturalHeight || img.height;
 
         if (imgW > availableW || imgH > availableH) {
           const fitRatio = Math.min(availableW / imgW, availableH / imgH, 1.0);
@@ -335,8 +335,8 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
         });
         if (generation !== renderGenerationRef.current) return;
         cachedEmbroideryCanvasRef.current = result.canvas;
-        setRenderStats({ timeMs: Math.round(result.renderTimeMs), width: source.width, height: source.height,
-          status: `${result.statusMessage || 'Ready'}${previewScale < 1 ? ` • Preview ${result.width}×${result.height}` : ''}` });
+        setRenderStats({ timeMs: Math.round(result.renderTimeMs), width: sourceAsset.width || source.width, height: sourceAsset.height || source.height,
+          status: `${result.statusMessage || 'Ready'}${previewScale < 1 ? ` • Preview ${result.width}×${result.height}` : ` • Ultra-HD ${result.width}×${result.height}`}` });
         drawFrameRef.current();
         if (previewScale < 1 && source.width * source.height <= MAX_RENDER_PIXELS) {
           // A fast editing preview is temporary. Finish the original native
@@ -348,8 +348,8 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
           });
           if (generation !== renderGenerationRef.current) return;
           cachedEmbroideryCanvasRef.current = full.canvas;
-          setRenderStats({ timeMs: Math.round(full.renderTimeMs), width: source.width, height: source.height,
-            status: `${full.statusMessage || 'Ready'} • Native detail` });
+          setRenderStats({ timeMs: Math.round(full.renderTimeMs), width: sourceAsset.width || source.width, height: sourceAsset.height || source.height,
+            status: `${full.statusMessage || 'Ready'} • Ultra-HD ${full.width}×${full.height}` });
           drawFrameRef.current();
         }
         if (previewScale === 1 || source.width * source.height <= MAX_RENDER_PIXELS) nativeResultRef.current = { source, settings };
@@ -510,7 +510,7 @@ export const EmbroideryStudio: React.FC<EmbroideryStudioProps> = ({
           >
             {/* Canvas Render Container */}
             <div
-              className="relative shadow-2xl flex items-center justify-center pointer-events-none will-change-transform"
+              className="relative shadow-2xl flex items-center justify-center pointer-events-none"
               style={{
                 transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: 'center center'

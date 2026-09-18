@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ExportOptions, EmbroiderySettings, MockupTemplate, MockupTransform } from '../types';
+import { ExportOptions, EmbroiderySettings, MockupTemplate, MockupTransform, SourceAsset } from '../types';
 import { ExportEngine } from '../engine/exportEngine';
 import { isRenderCancelled } from '../engine/backgroundRenderer';
 import { MAX_RENDER_PIXELS } from '../engine/renderSizing';
@@ -8,6 +8,7 @@ import { X, Download, CheckCircle2, Loader2, Sparkles, Layers, Image as ImageIco
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  sourceAsset?: SourceAsset | null;
   sourceImage: HTMLImageElement | HTMLCanvasElement | null;
   mockupTemplate: MockupTemplate;
   mockupImage: HTMLImageElement | null;
@@ -20,6 +21,7 @@ interface ExportModalProps {
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
+  sourceAsset,
   sourceImage,
   mockupTemplate,
   mockupImage,
@@ -77,7 +79,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           sourceImage,
           settings,
           transform,
-          options
+          options,
+          sourceAsset || undefined
         );
         const ext = options.format === 'jpeg' ? 'jpg' : options.format;
         if (revision === exportRevision.current) exportEngine.downloadFile(result.blob, `${options.fileName}-mockup.${ext}`);

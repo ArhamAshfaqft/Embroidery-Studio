@@ -215,14 +215,14 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
           message => { if (!cancelled) setRenderStatus(message); });
         if (cancelled) return;
         embroideryCanvasRef.current = result.canvas;
-        embroideryScaleRef.current = result.width / source.width;
+        embroideryScaleRef.current = sourceAsset.width > 0 ? result.width / sourceAsset.width : (result.width / source.width);
         renderCompositeMockup();
       } catch (error) {
         if (!cancelled && !isRenderCancelled(error)) setRenderStatus(error instanceof Error ? error.message : 'Render failed');
       }
     }, 120);
     return () => { cancelled = true; clearTimeout(timer); embroideryRenderer.current?.cancel(); };
-  }, [loadedSource, sourceAsset.dataUrl, settings, sourceRenderScale]);
+  }, [loadedSource, sourceAsset.dataUrl, sourceAsset.width, settings, sourceRenderScale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,17 +299,19 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
     }
   }, [mockupDimensions.width, mockupDimensions.height]);
 
+  const targetSupersample = Math.min(3.2, Math.max(2, Math.ceil(zoom * 1.15)));
+
   useEffect(() => {
     // When actively dragging, rotating, or scaling the gizmo, skip heavy displacement
     // to keep placement responsive. As soon as interaction settles, compute the
-    // full 2x supersampled displacement composite.
+    // full supersampled displacement composite.
     const frame = requestAnimationFrame(() => renderCompositeMockup(1, true));
 
     if (settledRenderTimerRef.current !== null) {
       window.clearTimeout(settledRenderTimerRef.current);
     }
     settledRenderTimerRef.current = window.setTimeout(() => {
-      renderCompositeMockup(PREVIEW_SUPERSAMPLE, false);
+      renderCompositeMockup(targetSupersample, false);
       settledRenderTimerRef.current = null;
     }, HIGH_QUALITY_SETTLE_MS);
 
@@ -320,7 +322,15 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
         settledRenderTimerRef.current = null;
       }
     };
-  }, [transform, renderCompositeMockup]);
+  }, [transform, renderCompositeMockup, targetSupersample]);
+
+  useEffect(() => {
+    // When viewport zoom settles, re-render composite at matching high-DPI supersample
+    const timer = window.setTimeout(() => {
+      renderCompositeMockup(targetSupersample, false);
+    }, HIGH_QUALITY_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [zoom, targetSupersample, renderCompositeMockup]);
 
   useEffect(() => () => {
     ++composeGenerationRef.current;
@@ -501,7 +511,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({
           >
             {/* Canvas & Gizmo Wrapper */}
             <div
-              className="relative shadow-2xl flex items-center justify-center pointer-events-none will-change-transform"
+              className="relative shadow-2xl flex items-center justify-center pointer-events-none"
               style={{
                 transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: 'center center'

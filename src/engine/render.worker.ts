@@ -56,9 +56,11 @@ scope.onmessage = async ({ data: job }) => {
       progress('Compositing garment in background…');
       const compositionOptions = {
         ...job.composition,
-        embroideryRenderScale: (result && job.sourceWidth > 0)
-          ? (result.width / job.sourceWidth)
-          : (job.composition?.embroideryRenderScale ?? 1)
+        embroideryRenderScale: (job.composition?.embroideryRenderScale !== undefined)
+          ? job.composition.embroideryRenderScale
+          : (result && job.sourceWidth > 0)
+            ? (result.width / job.sourceWidth)
+            : 1
       };
       const canvas = compositor.composeMockup(garment, artwork, job.transform, job.outputWidth, job.outputHeight, compositionOptions);
       result = { canvas, width: canvas.width, height: canvas.height, renderTimeMs: 0, statusMessage: 'Ready' };

@@ -95,58 +95,78 @@ export function trimTextCanvas(canvas: HTMLCanvasElement, padding = 24): HTMLCan
 
 /**
  * Render text to a canvas element and return the data URL and trimmed canvas
+ * Supersamples vector typography at 3x Ultra-HD density so threads and curves remain
+ * razor-sharp at high zoom levels in both the embroidery engine and garment mockups.
  */
 export function renderTextToCanvas(
   config: TextConfig,
-  targetWidth = 1400,
-  targetHeight = 900
-): { canvas: HTMLCanvasElement; dataUrl: string } {
+  baseWidth = 1400,
+  baseHeight = 900,
+  supersample = 3.0
+): { canvas: HTMLCanvasElement; dataUrl: string; logicalWidth: number; logicalHeight: number } {
+  const scaledWidth = Math.round(baseWidth * supersample);
+  const scaledHeight = Math.round(baseHeight * supersample);
+
   if (typeof document === 'undefined') {
     return {
-      canvas: { width: targetWidth, height: targetHeight } as HTMLCanvasElement,
-      dataUrl: 'data:image/png;base64,placeholder'
+      canvas: { width: scaledWidth, height: scaledHeight } as HTMLCanvasElement,
+      dataUrl: 'data:image/png;base64,placeholder',
+      logicalWidth: baseWidth,
+      logicalHeight: baseHeight
     };
   }
 
   const canvas = document.createElement('canvas');
-  canvas.width = targetWidth;
-  canvas.height = targetHeight;
+  canvas.width = scaledWidth;
+  canvas.height = scaledHeight;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return { canvas, dataUrl: '' };
+  if (!ctx) return { canvas, dataUrl: '', logicalWidth: baseWidth, logicalHeight: baseHeight };
 
-  ctx.clearRect(0, 0, targetWidth, targetHeight);
+  ctx.clearRect(0, 0, scaledWidth, scaledHeight);
 
   const textToDraw = config.uppercase ? config.text.toUpperCase() : config.text;
   const lines = textToDraw.split('\n');
 
+  const scaledFontSize = Math.round(config.fontSize * supersample);
+  const scaledLetterSpacing = config.letterSpacing * supersample;
+  const scaledConfig: TextConfig = {
+    ...config,
+    fontSize: scaledFontSize,
+    letterSpacing: scaledLetterSpacing
+  };
+
   ctx.fillStyle = config.color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `${config.fontWeight} ${config.fontSize}px ${config.fontFamily}`;
+  ctx.font = `${config.fontWeight} ${scaledFontSize}px ${config.fontFamily}`;
 
-  const centerX = targetWidth / 2;
-  const centerY = targetHeight / 2;
+  const centerX = scaledWidth / 2;
+  const centerY = scaledHeight / 2;
 
   if (Math.abs(config.archAngle) > 2) {
     // Render curved/arched text
-    renderArchedText(ctx, lines.join(' '), centerX, centerY, config);
+    renderArchedText(ctx, lines.join(' '), centerX, centerY, scaledConfig);
   } else {
     // Standard multi-line rendering with letter spacing
-    const totalHeight = lines.length * (config.fontSize * config.lineHeight);
-    let startY = centerY - totalHeight / 2 + (config.fontSize * config.lineHeight) / 2;
+    const totalHeight = lines.length * (scaledFontSize * config.lineHeight);
+    let startY = centerY - totalHeight / 2 + (scaledFontSize * config.lineHeight) / 2;
 
     for (const line of lines) {
-      drawSpacedText(ctx, line, centerX, startY, config.letterSpacing);
-      startY += config.fontSize * config.lineHeight;
+      drawSpacedText(ctx, line, centerX, startY, scaledLetterSpacing);
+      startY += scaledFontSize * config.lineHeight;
     }
   }
 
   // Auto-crop to content for tight, professional embroidery layout
-  const croppedCanvas = trimTextCanvas(canvas, 32);
+  const croppedCanvas = trimTextCanvas(canvas, Math.round(32 * supersample));
+  const logicalWidth = Math.max(1, Math.round(croppedCanvas.width / supersample));
+  const logicalHeight = Math.max(1, Math.round(croppedCanvas.height / supersample));
 
   return {
     canvas: croppedCanvas,
-    dataUrl: croppedCanvas.toDataURL('image/png')
+    dataUrl: croppedCanvas.toDataURL('image/png'),
+    logicalWidth,
+    logicalHeight
   };
 }
 
